@@ -3,7 +3,6 @@
   "version": "0.0.0",
   "private": true,
   "workspaces": [
-    "apps/*",
     "packages/*"
   ],
   "scripts": {
@@ -20,6 +19,5 @@
   "engines": {
     "node": ">=14.0.0"
   },
-  "dependencies": {},
-  "packageManager": "yarn@1.22.19"
+  "packageManager": "yarn@3.2.3"
 }
