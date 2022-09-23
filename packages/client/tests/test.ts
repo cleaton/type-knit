@@ -4,6 +4,7 @@ import {TKBuilder} from '@type-knit/server'
 import type { ToClient } from '@type-knit/server'
 import { z } from "zod";
 import {createClient} from '../src/index'
+import { createServerAdapter } from '@whatwg-node/server'
 
 const User = z.object({
   username: z.string(),
@@ -14,8 +15,6 @@ let tkr = tk.router({
   hello: tk.call(User, (args) => `Hello from ${args.username}!`)
 })
 
-import { createServerAdapter } from '@whatwg-node/server'
-
 const server = http.createServer(createServerAdapter((req) => {
   return tkr.route({req})
 }));
@@ -23,9 +22,9 @@ const server = http.createServer(createServerAdapter((req) => {
 const serverStart = new Promise((resolve, reject) => {
   server.listen(3000, '127.0.0.1', () => resolve('ok')).once('error', (err) => reject(err))
 })
-
 type MyServer = ToClient<typeof tkr>
 let client = createClient<MyServer>("http://127.0.0.1:3000")
+
 describe('sum module', () => {
   beforeAll(async () => {
     await serverStart
