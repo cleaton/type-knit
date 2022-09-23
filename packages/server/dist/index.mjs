@@ -72,7 +72,7 @@ var TKBuilder = class {
           };
         }
         const obj = routes[ctx.__tk_internals.paths[ctx.__tk_internals.index]];
-        console.log(obj);
+        console.log("obj", ctx.__tk_internals.paths, ctx.__tk_internals.index, obj);
         switch (obj._type) {
           case "call": {
             const payload = ctx.__tk_internals.tkreq.args.shift();

@@ -10,7 +10,7 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts",
-    "dev": "npm run build --watch"
+    "dev": "yarn build --watch"
   },
   "dependencies": {
     "zod": "^3.19.1"

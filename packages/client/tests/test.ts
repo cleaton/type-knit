@@ -48,7 +48,7 @@ function sleep(ms: number) {
 
 
 type MyServer = ToClient<typeof tkr>
-let client = createClient<MyServer>(new Request("http://127.0.0.1:3000/"))
+let client = createClient<MyServer>("http://127.0.0.1:3000")
 describe('sum module', () => {
   beforeAll(async () => {
     await serverStart
@@ -56,7 +56,7 @@ describe('sum module', () => {
   test('handle simple call', async () => {
     await serverStart
     console.log('in test')
-    let r = await client.hello.call({username: "TK"})
+    let r = await client.e().hello.call({username: "TK"})
     expect(r).toBe("Hello from TK!")
   });
   afterAll(() => {

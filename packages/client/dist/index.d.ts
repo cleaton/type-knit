@@ -1,5 +1,13 @@
-import { Request } from 'node-fetch';
+declare type TKFetchOptions = Record<string, any> & {
+    headers?: Record<string, string>;
+};
+declare type FetchImpl = {
+    Request: typeof Request;
+    Response: typeof Response;
+    fetch: typeof fetch;
+};
+declare function createClient<T>(url: string, options?: TKFetchOptions, fetchImpl?: FetchImpl): {
+    e: () => T;
+};
 
-declare function createClient<T>(req: Request): T;
-
-export { createClient };
+export { FetchImpl, createClient };
