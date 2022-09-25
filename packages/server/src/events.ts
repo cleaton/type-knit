@@ -1,7 +1,7 @@
-type Topics = {
+export type Topics = {
     [event: string]: any
 }
-type Unsubscribe = () => void
+export type Unsubscribe = () => void
 export type StreamEventData<T> = { type: "data"; data: T };
 export type StreamEventClose = { type: "close" };
 export type StreamEvent<T> = StreamEventData<T> | StreamEventClose;
