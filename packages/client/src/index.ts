@@ -1,5 +1,7 @@
-function exec<T>(target: TKProxyTarget, handleResponse: (resp: Response) => T) {
-  return async (args: unknown) => {
+import { ClientStreamEvent, EventStream } from "@type-knit/server";
+
+function exec<T>(target: TKProxyTarget, executeRequest: (req: Request) => T) {
+  return (args: unknown) => {
     const url = new URL(target.url);
     url.pathname = url.pathname + target.execPath;
     target.execArgs.push(args);
@@ -7,9 +9,51 @@ function exec<T>(target: TKProxyTarget, handleResponse: (resp: Response) => T) {
       ...target.options,
       body: JSON.stringify({ args: target.execArgs }),
     });
-    let resp = await fetch(r);
-    return handleResponse(resp);
+    return executeRequest(r);
   };
+}
+
+class EventStreamImpl<T> implements EventStream<T> {
+  private cancelled = false;
+  private reader?: ReadableStreamDefaultReader<string>
+  constructor(private req: Request) {}
+  async cancel() {
+    this.cancelled = true
+    this.reader?.cancel()
+  }
+  async start(cb: (event: ClientStreamEvent<T>) => void) {
+    cb({state: 'connecting'})
+    let resp = await fetch(this.req)
+    cb({state: 'connected'})
+    const body = resp.body
+    let lastData: T | undefined
+    if (body) {
+      this.reader = body.pipeThrough(new TextDecoderStream()).getReader()
+      let buffer = '';
+      let endOfStream = false
+      while (!this.cancelled) {
+        let {done, value} = await this.reader.read()
+        if (done) {
+          endOfStream = true
+          break;
+        } if (value) {
+          let end = value.indexOf("\n")
+          if (end) {
+            buffer += value.slice(0, end)
+            let data = JSON.parse(buffer)
+            lastData = data
+            cb({state: "data", data})
+            buffer = value.slice(end + 1)
+          } else {
+            buffer += value
+          }
+        }
+      }
+      if (endOfStream) {
+        cb({state: "done", lastData})
+      }
+    }
+  }
 }
 
 const proxyHandler: ProxyHandler<any> = {
@@ -20,9 +64,9 @@ const proxyHandler: ProxyHandler<any> = {
       : stringprop;
     switch (prop) {
       case "call":
-        return exec(target, (resp) => resp.json());
+        return exec(target, (req) => fetch(req).then(resp => resp.json()));
       case "stream":
-        return exec(target, (resp) => resp.json());
+        return exec(target, (req) => new EventStreamImpl(req));
       case "instance":
         return async (args: unknown) => {
           target.execArgs.push(args);

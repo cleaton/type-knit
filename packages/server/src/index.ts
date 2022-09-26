@@ -1,9 +1,13 @@
 import { Schema, unknown, z, ZodSchema } from "zod";
-import { EventEmitter, eventStream, StreamEvent, Topics } from "./events";
+import {
+  Emitter,
+  EventEmitter,
+  eventStream,
+  StreamEvent,
+  Topics,
+} from "./events";
 
-const User = z.object({
-  username: z.string(),
-});
+type Sameish<T, U> = [T] extends [U] ? ([U] extends [T] ? T : never) : never;
 
 export type TKServerContext = Omit<Record<string, any>, "req"> & {
   req: Request;
@@ -12,7 +16,7 @@ export type TKServerContext = Omit<Record<string, any>, "req"> & {
 export type TKStreamSuccess<V, T extends Topics, Ts extends keyof T> = {
   type: "success";
   topic: Ts;
-  initValue?: V & T[Ts];
+  initValue?: Sameish<V, T[Ts]>;
 };
 export type TKCallSuccess<T> = T;
 export type TKError = {
@@ -22,7 +26,9 @@ export type TKError = {
 };
 
 export type TKCallResult<T> = TKError | TKCallSuccess<T>;
-export type TKStreamResult<V,T extends Topics, Ts extends keyof T> = TKError | TKStreamSuccess<V, T, Ts>;
+export type TKStreamResult<V, T extends Topics, Ts extends keyof T> =
+  | TKStreamSuccess<V, T, Ts>
+  | TKError;
 
 export type Instance<
   R extends Router = any,
@@ -57,7 +63,7 @@ export type Stream<
   Out = any,
   Ctx extends TKServerContext = any,
   T extends Topics = any,
-  Ts extends keyof T = any,
+  Ts extends keyof T = any
 > = {
   _type: "stream";
   _schema: SchemaType;
@@ -73,15 +79,10 @@ export type MiddleWare<Ctx extends TKServerContext = any> = {
 export type Router<Ctx extends TKServerContext = any> = Routes & {
   _type: "router";
   _middlewares: MiddleWare[];
-  route: (ctx: Ctx) => Promise<Response>;
+  route: (ctx: Ctx & MaybeTKInternals) => Promise<Response>;
 };
 
-type InternalKeys =
-  | "_type"
-  | "_schema"
-  | "_middlewares"
-  | "route"
-  | "_executor";
+type InternalKeys = "_type" | "_schema" | "_middlewares" | "route";
 type Routes<Ctx extends TKServerContext = any> = {
   [key: string]: Call | Stream | Router<Ctx> | Instance;
 };
@@ -101,12 +102,16 @@ type MaybeTKInternals = {
 };
 
 // Build API
-export class TKBuilder<Ctx extends TKServerContext, T extends Topics = Record<string, any>, Ts extends keyof T = any> {
-  public readonly emit: (topic: Ts, event: StreamEvent<T[Ts]>) => void;
-  private readonly emitter: EventEmitter<T>;
-  constructor(emitter?: EventEmitter<T>) {
-    this.emitter = emitter || new EventEmitter<any>();
-    this.emit = this.emitter.emit;
+export class TKBuilder<
+  Ctx extends TKServerContext,
+  T extends Topics = Record<string, any>
+> {
+  private readonly emitter: Emitter<T>;
+  constructor(emitter?: Emitter<T>) {
+    this.emitter = emitter || new EventEmitter<T>();
+  }
+  emit<Ts extends keyof T>(topic: Ts, event: StreamEvent<T[Ts]>): void {
+    this.emitter.emit(topic, event)
   }
   instance<R extends Router = any, SchemaType extends z.ZodType = any>(
     router: R,
@@ -143,7 +148,7 @@ export class TKBuilder<Ctx extends TKServerContext, T extends Topics = Record<st
     schema: SchemaType,
     f: (args: z.infer<SchemaType>, ctx: Ctx) => TKStreamResult<Out, T, keyof T>,
     middlewares: MiddleWare<Ctx>[] = []
-  ): Stream<Schema, z.infer<SchemaType>, Out, Ctx> {
+  ): Stream<Schema, z.infer<SchemaType>, Out, Ctx, T, keyof T> {
     return {
       _type: "stream",
       _schema: schema,
@@ -154,7 +159,7 @@ export class TKBuilder<Ctx extends TKServerContext, T extends Topics = Record<st
   router<R extends Routes>(
     routes: R,
     middlewares: MiddleWare<Ctx>[] = []
-  ): R & Router {
+  ): Router<Ctx> & R {
     return {
       ...routes,
       _middlewares: middlewares,
@@ -164,8 +169,6 @@ export class TKBuilder<Ctx extends TKServerContext, T extends Topics = Record<st
         const paths = url.pathname.split("/");
         paths.shift(); // remove first ''
         const first = paths.shift();
-        console.log("paths", paths);
-        console.log("first", first);
         for (const m of middlewares) {
           let out = m.handle(ctx);
           if (out.type == "response") {
@@ -173,8 +176,8 @@ export class TKBuilder<Ctx extends TKServerContext, T extends Topics = Record<st
           }
           ctx = {
             ...out.data,
-            __tk_internals: ctx.__tk_internals
-          }
+            __tk_internals: ctx.__tk_internals,
+          };
         }
         if (!ctx.__tk_internals) {
           const url = new URL(ctx.req.url);
@@ -182,12 +185,10 @@ export class TKBuilder<Ctx extends TKServerContext, T extends Topics = Record<st
           paths.shift();
           let tkreq = await ctx.req.json();
           if (typeof tkreq !== "object") {
-            console.log("bad req");
             return new Response("bad request", { status: 400 });
           }
           tkreq.args = tkreq.args ? tkreq.args : [];
           if (!Array.isArray(tkreq.args)) {
-            console.log("bad args", tkreq.args);
             return new Response("bad request", { status: 400 });
           }
           ctx.__tk_internals = {
@@ -198,12 +199,6 @@ export class TKBuilder<Ctx extends TKServerContext, T extends Topics = Record<st
         }
 
         const obj = routes[ctx.__tk_internals.paths[ctx.__tk_internals.index]];
-        console.log(
-          "obj",
-          ctx.__tk_internals.paths,
-          ctx.__tk_internals.index,
-          obj
-        );
         switch (obj._type) {
           case "call": {
             const payload = ctx.__tk_internals.tkreq.args.shift();
@@ -225,17 +220,20 @@ export class TKBuilder<Ctx extends TKServerContext, T extends Topics = Record<st
               const status = result.status ? result.status : 400;
               return new Response(result.error, { status });
             }
-            let publish: (event: StreamEvent<unknown>) => void
-            const unsub = this.emitter.subscribe(result.topic, (event: StreamEvent<unknown>) => publish && publish(event))
-            const es = eventStream(() => unsub())
-            publish = es.publish
+            let publish: (event: StreamEvent<unknown>) => void;
+            const unsub = this.emitter.subscribe(
+              result.topic,
+              (event: StreamEvent<unknown>) => publish && publish(event)
+            );
+            const es = eventStream(() => unsub());
+            publish = es.publish;
             return new Response(es.readable, {
               status: 200,
               headers: {
-                'Content-Type': 'text/event-stream',
-                'Connection': 'keep-alive',
-                'Cache-Control': 'no-cache',
-              }
+                "Content-Type": "text/event-stream",
+                Connection: "keep-alive",
+                "Cache-Control": "no-cache",
+              },
             });
           }
           case "instance": {
@@ -256,36 +254,64 @@ export class TKBuilder<Ctx extends TKServerContext, T extends Topics = Record<st
 }
 
 // Client Type Setup
+export type CSEConnecting = {state: 'connecting'}
+export type CSEConnected = {state: 'connected'}
+export type CSEData<T> = {state: 'data', data: T}
+export type CSEReconnecting<T> = {state: 'reconnecting', lastError?: string, lastData?: T}
+export type CSEDone<T> = {state: 'done', lastData?: T}
+
+export type ClientStreamEvent<T> = CSEConnecting | CSEConnected | CSEData<T> | CSEReconnecting<T> | CSEDone<T>
+
+export interface EventStream<T> {
+  start(cb: (event: ClientStreamEvent<T>) => void): void;
+}
+
 type KeepFirstArg<F> = F extends (args: infer A, ...other: any) => infer R
   ? (args: A) => R
   : never;
-type StreamType<
-  T extends (...a: any) => any,
-  G = ReturnType<T>["initValue"]
-> = (...a: Parameters<T>) => G;
+
+type StreamType2<T extends (...a: any) => any> = (
+  ...a: Parameters<T>
+) => EventStream<ReturnType<T>['initValue']>;
+
+type StreamType<T> = T extends (args: infer A) => infer R
+? R extends TKStreamSuccess<infer V, any, any> ? (args: A) => EventStream<V>
+: never
+: never;
+
 type InstanceType<
   T extends (...a: any) => any,
   G = ToBase<ReturnType<T>["_undefinedrouter"]>
 > = (...a: Parameters<T>) => G;
+
 type ToBase<T> = T extends Call
-  ? { call: KeepFirstArg<T["call"]> }
+  ? { [K in keyof Pick<T, "call">]: KeepFirstArg<T["call"]> }
   : T extends Stream
-  ? { stream: StreamType<KeepFirstArg<T["stream"]>> }
+  ? { [K in keyof Pick<T, "stream">]: StreamType<KeepFirstArg<T["stream"]>> }
   : T extends Instance
-  ? { instance: InstanceType<KeepFirstArg<T["instance"]>> }
+  ? {
+      [K in keyof Pick<T, "instance">]: InstanceType<
+        KeepFirstArg<T["instance"]>
+      >;
+    }
   : T extends Router
-  ? Omit<T, InternalKeys> & {
-      [K in Exclude<keyof T, InternalKeys>]: ToBase<T[K]>;
+  ? {
+      [K in keyof Omit<T, InternalKeys>]: ToBase<T[K]>;
     }
   : never;
 export type ToClient<T extends Router> = ToBase<T>;
 
 /// TEMPORARY TESTS
+
+const User = z.object({
+  username: z.string(),
+});
+
 type MyContext = {
   req: Request;
 };
 
-let tk = new TKBuilder<MyContext, {topica: number}>();
+let tk = new TKBuilder<MyContext, { topica: string }>();
 
 let ks = tk.router({
   other: {
@@ -307,12 +333,15 @@ let r = tk.router({
   test: tk.call(User, (args) => 13),
   subrouter: b,
   instancerouter: tk.instance(c, (_args, ctx) => fetch, User),
-  st: tk.stream(User, (args) => ({type: 'success', topic: 'topica', initValue: 123 })),
+  st: tk.stream(User, (args) => ({
+    type: "success",
+    topic: "topica",
+    initValue: "test2",
+  })),
 });
-type Expected = ToBase<typeof r>;
+type Expected = ToClient<typeof r>;
 
 let rasd: Expected;
-
 //rasd.call()
 //rasd.subrouter.
 
