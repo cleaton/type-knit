@@ -19,9 +19,10 @@
   "devDependencies": {
     "@types/node": "18.7.23",
     "@whatwg-node/server": "0.4.5",
-    "jest": "29.0.3",
-    "ts-jest": "29.0.2",
-    "typescript": "^4.8.3"
+    "typescript": "^4.8.3",
+    "uvu": "0.5.6",
+    "tsm": "2.2.2",
+    "c8": "7.12.0"
   },
   "dependencies": {
     "zod": "^3.19.1"
@@ -30,7 +31,9 @@
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --build --watch --incremental",
-    "test": "jest --verbose --detectOpenHandles",
+    "test": "uvu -r tsm tests",
+    "test:coverage": "c8 --include=src npm test",
+    "test:report": "c8 report --reporter=text-lcov > coverage/coverage.lcov",
     "prepare": "npm run build"
   }
 }

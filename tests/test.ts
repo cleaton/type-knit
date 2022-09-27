@@ -1,4 +1,6 @@
-import { describe, expect, test, beforeAll, afterAll } from "@jest/globals";
+
+import { suite } from 'uvu';
+import * as assert from 'uvu/assert';
 import http from 'node:http'
 import { z } from "zod";
 import { createServerAdapter } from "@whatwg-node/server";
@@ -41,50 +43,53 @@ const serverStart = new Promise((resolve, reject) => {
 type MyServer = ToClient<typeof tkr>;
 let client = createClient<MyServer>("http://127.0.0.1:3000");
 
-describe("sum module", () => {
-  beforeAll(async () => {
-    await serverStart;
-  });
-  test("handle simple call", async () => {
-    let r = await client.e().hello.call({ username: "TK" });
-    expect(r).toBe("Hello from TK!");
-  });
-  test("handle simple stream", async () => {
-    return new Promise(resolve => {
-      const r = client.e().hellostream.stream({ username: "TK" })
-      
-      r.start((ev) => {
-        switch (ev.state) {
-          case 'connected':
-            console.log("CONNECTED")
-            break;
-          case 'connecting':
-            console.log("CONNECTING")
-            break;
-          case 'data':
-            console.log("DATA: ", ev.data)
-            if (ev.data.nr === 1) {
-              r.cancel()
-              resolve(ev.data.nr)
-            }
-            break;
-          case 'done':
-            console.log("DONE")
-          case 'reconnecting':
-            console.log("RECONNECTING")
-          default:
-            console.log("OTHER STATE")
-            break;
-        }
-      });
-    }).then( data => {
-      console.log("HERE, ", data)
-      expect("test").toBe("test")
-    })
-  });
-  afterAll(async () => {
-    await new Promise((resolve, reject) => {
-      server.close((err) => (err ? reject(err) : resolve("closed")));
-    });
-  });
+
+const tktest = suite('type-knit');
+
+tktest('simple call', async () => {
+  let r = await client.e().hello.call({ username: "TK" });
+  assert.is(r, "Hello from TK!")
 });
+
+tktest.before(async () => {
+  await serverStart
+})
+
+tktest('simple stream', async () => {
+  return new Promise(resolve => {
+    const r = client.e().hellostream.stream({ username: "TK" })
+    
+    r.start((ev) => {
+      switch (ev.state) {
+        case 'connected':
+          console.log("CONNECTED")
+          break;
+        case 'connecting':
+          console.log("CONNECTING")
+          break;
+        case 'data':
+          console.log("DATA: ", ev.data)
+          if (ev.data.nr === 1) {
+            r.cancel()
+            resolve(ev.data.nr)
+          }
+          break;
+        case 'done':
+          console.log("DONE")
+        case 'reconnecting':
+          console.log("RECONNECTING")
+        default:
+          console.log("OTHER STATE")
+          break;
+      }
+    });
+  }).then( data => {
+    console.log("HERE, ", data)
+    assert.is(data, 1)
+  })
+});
+
+tktest.after(() => {
+  server.close();
+})
+tktest.run();
