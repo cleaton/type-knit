@@ -1,23 +1,38 @@
 {
-  "name": "type-knit",
-  "version": "0.0.0",
-  "private": true,
-  "workspaces": [
-    "packages/*"
-  ],
-  "scripts": {
-    "build": "turbo run build",
-    "dev": "turbo run dev --parallel",
-    "lint": "turbo run lint",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\""
-  },
-  "devDependencies": {
-    "eslint-config-custom": "*",
-    "prettier": "latest",
-    "turbo": "latest"
+  "name": "type-knit-2",
+  "version": "0.0.1",
+  "description": "Typed fetch based API optimized for edge",
+  "author": "Jesper Lundgren",
+  "license": "MIT",
+  "packageManager": "yarn@3.2.3",
+  "type": "module",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=18.8"
   },
-  "packageManager": "yarn@3.2.3"
+  "devDependencies": {
+    "@types/jest": "29.0.3",
+    "@types/node": "18.7.23",
+    "@whatwg-node/server": "0.4.5",
+    "jest": "29.0.3",
+    "ts-jest": "29.0.2",
+    "typescript": "^4.8.3"
+  },
+  "dependencies": {
+    "zod": "^3.19.1"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --build --watch --incremental",
+    "test": "jest --verbose --detectOpenHandles",
+    "prepare": "build"
+  }
 }

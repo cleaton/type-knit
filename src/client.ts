@@ -1,4 +1,4 @@
-import { ClientStreamEvent, EventStream } from "@type-knit/server";
+import { ClientStreamEvent, EventStream } from "./server";
 
 function exec<T>(target: TKProxyTarget, executeRequest: (req: Request) => T) {
   return (args: unknown) => {
@@ -104,9 +104,9 @@ export function createClient<T>(
   const impl: FetchImpl = fetchImpl
     ? fetchImpl
     : {
-        fetch: global.fetch,
-        Request: global.Request,
-        Response: global.Response,
+        fetch: fetch,
+        Request: Request,
+        Response: Response,
       };
   const requiredOptions = { method: "POST" };
   const requiredHeaders = { "content-type": "application/json" };

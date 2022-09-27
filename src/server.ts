@@ -263,6 +263,7 @@ export type CSEDone<T> = {state: 'done', lastData?: T}
 export type ClientStreamEvent<T> = CSEConnecting | CSEConnected | CSEData<T> | CSEReconnecting<T> | CSEDone<T>
 
 export interface EventStream<T> {
+  cancel(): Promise<void>;
   start(cb: (event: ClientStreamEvent<T>) => void): void;
 }
 
