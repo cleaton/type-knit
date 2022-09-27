@@ -4,6 +4,7 @@ function exec<T>(target: TKProxyTarget, executeRequest: (req: Request) => T) {
   return (args: unknown) => {
     const url = new URL(target.url);
     url.pathname = url.pathname + target.execPath;
+    console.log(url.pathname)
     target.execArgs.push(args);
     let r = new target.impl.Request(url, {
       ...target.options,
@@ -68,8 +69,9 @@ const proxyHandler: ProxyHandler<any> = {
       case "stream":
         return exec(target, (req) => new EventStreamImpl(req));
       case "instance":
-        return async (args: unknown) => {
+        return (args: unknown) => {
           target.execArgs.push(args);
+          //console.log('instnae', target)
           return new Proxy(target, proxyHandler);
         };
       default:

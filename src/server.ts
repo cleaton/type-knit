@@ -197,8 +197,8 @@ export class TKBuilder<
             tkreq,
           };
         }
-
-        const obj = routes[ctx.__tk_internals.paths[ctx.__tk_internals.index]];
+        const path = ctx.__tk_internals.paths.shift() || ""
+        const obj = routes[path];
         switch (obj._type) {
           case "call": {
             const payload = ctx.__tk_internals.tkreq.args.shift();
@@ -237,13 +237,15 @@ export class TKBuilder<
             });
           }
           case "instance": {
-            const json = await ctx.req.json();
-            const args = obj._schema.safeParse(json);
+            const payload = ctx.__tk_internals.tkreq.args.shift();
+            const args = obj._schema.safeParse(payload);
             const { fetch } = obj.instance(args, ctx);
-            return fetch(ctx.req);
+            let url = new URL(ctx.req.url);
+            ctx.__tk_internals.paths.shift();
+            url.pathname = ctx.__tk_internals.paths.join('/')
+            return fetch(new Request(url, {headers: ctx.req.headers, method: 'POST', body: JSON.stringify(ctx.__tk_internals.tkreq)}));
           }
           case "router": {
-            ++ctx.__tk_internals.index;
             return obj.route(ctx);
           }
         }
