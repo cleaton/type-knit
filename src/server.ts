@@ -76,13 +76,13 @@ export type MiddleWare<Ctx extends TKServerContext = any> = {
     ctx: Ctx
   ) => { type: "response"; data: Response } | { type: "ctx"; data: Ctx };
 };
-export type Router<Ctx extends TKServerContext = any> = Routes & {
+export type Router<Ctx extends TKServerContext = any> = {
   _type: "router";
   _middlewares: MiddleWare[];
   route: (ctx: Ctx & MaybeTKInternals) => Promise<Response>;
 };
 
-type InternalKeys = "_type" | "_schema" | "_middlewares" | "route";
+type InternalKeys = "_type" | "_schema" | "_middlewares" | "route" | "instance" | "call" | "stream";
 type Routes<Ctx extends TKServerContext = any> = {
   [key: string]: Call | Stream | Router<Ctx> | Instance;
 };
@@ -165,10 +165,6 @@ export class TKBuilder<
       _middlewares: middlewares,
       _type: "router",
       route: async (ctx: Ctx & MaybeTKInternals) => {
-        const url = new URL(ctx.req.url);
-        const paths = url.pathname.split("/");
-        paths.shift(); // remove first ''
-        const first = paths.shift();
         for (const m of middlewares) {
           let out = m.handle(ctx);
           if (out.type == "response") {
@@ -197,56 +193,61 @@ export class TKBuilder<
             tkreq,
           };
         }
-        const path = ctx.__tk_internals.paths.shift() || ""
-        const obj = routes[path];
-        switch (obj._type) {
-          case "call": {
-            const payload = ctx.__tk_internals.tkreq.args.shift();
-            const args = obj._schema.safeParse(payload);
-            const result = obj.call(args.data, ctx);
-            if (result.error) {
-              const status = result.status ? result.status : 400;
-              return new Response(result.error, { status });
+        let path = ctx.__tk_internals.paths.shift()
+        while (path && routes[path]) {
+          const obj = routes[path];
+          switch (obj._type) {
+            case "call": {
+              const payload = ctx.__tk_internals.tkreq.args.shift();
+              const args = obj._schema.safeParse(payload);
+              const result = obj.call(args.data, ctx);
+              if (result.error) {
+                const status = result.status ? result.status : 400;
+                return new Response(result.error, { status });
+              }
+              return new Response(JSON.stringify(result), {
+                status: 200,
+              });
             }
-            return new Response(JSON.stringify(result), {
-              status: 200,
-            });
-          }
-          case "stream": {
-            const payload = ctx.__tk_internals.tkreq.args.shift();
-            const args = obj._schema.safeParse(payload);
-            const result = obj.stream(args, ctx);
-            if (result.type === "error") {
-              const status = result.status ? result.status : 400;
-              return new Response(result.error, { status });
+            case "stream": {
+              const payload = ctx.__tk_internals.tkreq.args.shift();
+              const args = obj._schema.safeParse(payload);
+              const result = obj.stream(args, ctx);
+              if (result.type === "error") {
+                const status = result.status ? result.status : 400;
+                return new Response(result.error, { status });
+              }
+              let publish: (event: StreamEvent<unknown>) => void;
+              const unsub = this.emitter.subscribe(
+                result.topic,
+                (event: StreamEvent<unknown>) => publish && publish(event)
+              );
+              const es = eventStream(() => unsub());
+              publish = es.publish;
+              return new Response(es.readable, {
+                status: 200,
+                headers: {
+                  "Content-Type": "text/event-stream",
+                  Connection: "keep-alive",
+                  "Cache-Control": "no-cache",
+                },
+              });
             }
-            let publish: (event: StreamEvent<unknown>) => void;
-            const unsub = this.emitter.subscribe(
-              result.topic,
-              (event: StreamEvent<unknown>) => publish && publish(event)
-            );
-            const es = eventStream(() => unsub());
-            publish = es.publish;
-            return new Response(es.readable, {
-              status: 200,
-              headers: {
-                "Content-Type": "text/event-stream",
-                Connection: "keep-alive",
-                "Cache-Control": "no-cache",
-              },
-            });
-          }
-          case "instance": {
-            const payload = ctx.__tk_internals.tkreq.args.shift();
-            const args = obj._schema.safeParse(payload);
-            const { fetch } = obj.instance(args, ctx);
-            let url = new URL(ctx.req.url);
-            ctx.__tk_internals.paths.shift();
-            url.pathname = ctx.__tk_internals.paths.join('/')
-            return fetch(new Request(url, {headers: ctx.req.headers, method: 'POST', body: JSON.stringify(ctx.__tk_internals.tkreq)}));
-          }
-          case "router": {
-            return obj.route(ctx);
+            case "instance": {
+              const payload = ctx.__tk_internals.tkreq.args.shift();
+              const args = obj._schema.safeParse(payload);
+              const { fetch } = obj.instance(args, ctx);
+              let url = new URL(ctx.req.url);
+              ctx.__tk_internals.paths.shift();
+              url.pathname = ctx.__tk_internals.paths.join('/')
+              return fetch(new Request(url, { headers: ctx.req.headers, method: 'POST', body: JSON.stringify(ctx.__tk_internals.tkreq) }));
+            }
+            case "router": {
+              return obj.route(ctx);
+            }
+            default: {
+              ctx.__tk_internals.paths.shift()
+            }
           }
         }
         return new Response("route not found", { status: 404 });
@@ -256,11 +257,11 @@ export class TKBuilder<
 }
 
 // Client Type Setup
-export type CSEConnecting = {state: 'connecting'}
-export type CSEConnected = {state: 'connected'}
-export type CSEData<T> = {state: 'data', data: T}
-export type CSEReconnecting<T> = {state: 'reconnecting', lastError?: string, lastData?: T}
-export type CSEDone<T> = {state: 'done', lastData?: T}
+export type CSEConnecting = { state: 'connecting' }
+export type CSEConnected = { state: 'connected' }
+export type CSEData<T> = { state: 'data', data: T }
+export type CSEReconnecting<T> = { state: 'reconnecting', lastError?: string, lastData?: T }
+export type CSEDone<T> = { state: 'done', lastData?: T }
 
 export type ClientStreamEvent<T> = CSEConnecting | CSEConnected | CSEData<T> | CSEReconnecting<T> | CSEDone<T>
 
@@ -278,9 +279,9 @@ type StreamType2<T extends (...a: any) => any> = (
 ) => EventStream<ReturnType<T>['initValue']>;
 
 type StreamType<T> = T extends (args: infer A) => infer R
-? R extends TKStreamSuccess<infer V, any, any> ? (args: A) => EventStream<V>
-: never
-: never;
+  ? R extends TKStreamSuccess<infer V, any, any> ? (args: A) => EventStream<V>
+  : never
+  : never;
 
 type InstanceType<
   T extends (...a: any) => any,
@@ -293,15 +294,14 @@ type ToBase<T> = T extends Call
   ? { [K in keyof Pick<T, "stream">]: StreamType<KeepFirstArg<T["stream"]>> }
   : T extends Instance
   ? {
-      [K in keyof Pick<T, "instance">]: InstanceType<
-        KeepFirstArg<T["instance"]>
-      >;
-    }
-  : T extends Router
-  ? {
-      [K in keyof Omit<T, InternalKeys>]: ToBase<T[K]>;
-    }
-  : never;
+    [K in keyof Pick<T, "instance">]: InstanceType<
+      KeepFirstArg<T["instance"]>
+    >;
+  }
+  : T extends object ? {
+    [K in keyof Omit<T, InternalKeys>]: ToBase<T[K]>;
+  }
+  : never
 export type ToClient<T extends Router> = ToBase<T>;
 
 /// TEMPORARY TESTS
@@ -342,7 +342,11 @@ let r = tk.router({
     initValue: "test2",
   })),
 });
-type Expected = ToClient<typeof r>;
+
+let test2 = tk.router({
+  testinstance: tk.instance(c, (_args, ctx) => fetch, User),
+})
+type Expected = ToClient<typeof test2>;
 
 let rasd: Expected;
 //rasd.call()
@@ -379,4 +383,4 @@ t.f()({ hi: "hello" });
 //    }
 //}
 
-export {};
+export { };
