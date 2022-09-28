@@ -271,10 +271,12 @@ export interface EventStream<T> {
 }
 
 type KeepFirstArg<F> = F extends (args: infer A, ...other: any) => infer R
-  ? (args: A) => R
+  ? R extends MaybeAsync<infer RA>
+  ? (args: A) => Promise<RA>
+  : never
   : never;
 
-type StreamType<T> = T extends (args: infer A) => infer R
+type StreamType<T> = T extends (args: infer A) => Promise<infer R>
   ? R extends TKStreamSuccess<infer V, any, any> ? (args: A) => EventStream<V>
   : never
   : never;
@@ -310,6 +312,7 @@ type MyContext = {
 };
 
 let tk = new TKBuilder<MyContext, { topica: string }>();
+let tk2 = new TKBuilder<MyContext & {self?: string}>();
 
 let ks = tk.router({
   other: {
@@ -323,12 +326,12 @@ let ks = tk.router({
 let b = tk.router({
   test2: tk.call(User, (args) => args.username),
 });
-let c = tk.router({
-  test2: tk.call(User, (args) => args.username),
+let c = tk2.router({
+  test2: tk.call(User, (args) => new Promise<string>(resolve => resolve(args.username))),
 });
 
 let r = tk.router({
-  test: tk.call(User, (args) => 13),
+  test: tk.call(User, (args) => new Promise<number>((resolve => resolve(13)))),
   subrouter: b,
   instancerouter: tk.instance(c, (_args, ctx) => fetch, User),
   st: tk.stream(User, (args) => ({
@@ -339,12 +342,12 @@ let r = tk.router({
 });
 
 let test2 = tk.router({
-  testinstance: tk.instance(c, (_args, ctx) => fetch, User),
+  queue: tk.instance(c, (_args, ctx) => fetch, User),
 })
-type Expected = ToClient<typeof r>;
+type Expected = ToClient<typeof test2>;
 
-let rasd: Expected;
-
+let rasd: Expected = r as any;
+//rasd.queue.instance({username: "test"}).test2.call()
 //rasd.call()
 //rasd.subrouter.
 
