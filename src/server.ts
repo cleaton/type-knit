@@ -8,6 +8,7 @@ import {
 } from "./events";
 
 type Sameish<T, U> = [T] extends [U] ? ([U] extends [T] ? T : never) : never;
+type MaybeAsync<T> = T | Promise<T>
 
 export type TKServerContext = Omit<Record<string, any>, "req"> & {
   req: Request;
@@ -42,7 +43,7 @@ export type Instance<
   instance: (
     args: In,
     ctx: Ctx
-  ) => { fetch: (req: Request) => Promise<Response>; _undefinedrouter: R };
+  ) => Promise<{ fetch: (req: Request) => Promise<Response> }>;
 };
 
 export type Call<
@@ -54,7 +55,7 @@ export type Call<
   _type: "call";
   _schema?: SchemaType;
   _middlewares: MiddleWare[];
-  call: (args: In, ctx: Ctx) => TKCallResult<Out>;
+  call: (args: In, ctx: Ctx) => MaybeAsync<TKCallResult<Out>>;
 };
 
 export type Stream<
@@ -68,7 +69,7 @@ export type Stream<
   _type: "stream";
   _schema: SchemaType;
   _middlewares: MiddleWare[];
-  stream: (args: In, ctx: Ctx) => TKStreamResult<Out, T, Ts>;
+  stream: (args: In, ctx: Ctx) => MaybeAsync<TKStreamResult<Out, T, Ts>>;
 };
 
 export type MiddleWare<Ctx extends TKServerContext = any> = {
@@ -118,7 +119,7 @@ export class TKBuilder<
     f: (
       args: z.infer<SchemaType>,
       ctx: Ctx
-    ) => (req: Request) => Promise<Response>,
+    ) => MaybeAsync<(req: Request) => Promise<Response>>,
     schema?: SchemaType,
     middlewares: MiddleWare<Ctx>[] = []
   ): Instance<R, Schema, z.infer<SchemaType>, Ctx> {
@@ -126,15 +127,14 @@ export class TKBuilder<
       _type: "instance",
       _schema: schema,
       _middlewares: middlewares,
-      // @ts-ignore we don't need to return the actual router here as only fetch is needed. Only passed to keep type information
-      instance: (args?: z.infer<SchemaType>, ctx: Ctx) => ({
-        fetch: f(args, ctx),
+      instance: async (args: z.infer<SchemaType>, ctx: Ctx) => ({
+        fetch: await f(args, ctx),
       }),
     };
   }
   call<SchemaType extends z.ZodType, Out>(
     schema: SchemaType,
-    f: (args: z.infer<SchemaType>, ctx: Ctx) => TKCallResult<Out>,
+    f: (args: z.infer<SchemaType>, ctx: Ctx) => MaybeAsync<TKCallResult<Out>>,
     middlewares: MiddleWare<Ctx>[] = []
   ): Call<Schema, z.infer<SchemaType>, Out, Ctx> {
     return {
@@ -146,7 +146,7 @@ export class TKBuilder<
   }
   stream<SchemaType extends z.ZodType, Out>(
     schema: SchemaType,
-    f: (args: z.infer<SchemaType>, ctx: Ctx) => TKStreamResult<Out, T, keyof T>,
+    f: (args: z.infer<SchemaType>, ctx: Ctx) => MaybeAsync<TKStreamResult<Out, T, keyof T>>,
     middlewares: MiddleWare<Ctx>[] = []
   ): Stream<Schema, z.infer<SchemaType>, Out, Ctx, T, keyof T> {
     return {
@@ -200,7 +200,7 @@ export class TKBuilder<
             case "call": {
               const payload = ctx.__tk_internals.tkreq.args.shift();
               const args = obj._schema.safeParse(payload);
-              const result = obj.call(args.data, ctx);
+              const result = await obj.call(args.data, ctx);
               if (result.error) {
                 const status = result.status ? result.status : 400;
                 return new Response(result.error, { status });
@@ -212,7 +212,7 @@ export class TKBuilder<
             case "stream": {
               const payload = ctx.__tk_internals.tkreq.args.shift();
               const args = obj._schema.safeParse(payload);
-              const result = obj.stream(args, ctx);
+              const result = await obj.stream(args, ctx);
               if (result.type === "error") {
                 const status = result.status ? result.status : 400;
                 return new Response(result.error, { status });
@@ -236,7 +236,7 @@ export class TKBuilder<
             case "instance": {
               const payload = ctx.__tk_internals.tkreq.args.shift();
               const args = obj._schema.safeParse(payload);
-              const { fetch } = obj.instance(args, ctx);
+              const { fetch } = await obj.instance(args, ctx);
               let url = new URL(ctx.req.url);
               ctx.__tk_internals.paths.shift();
               url.pathname = ctx.__tk_internals.paths.join('/')
@@ -274,28 +274,23 @@ type KeepFirstArg<F> = F extends (args: infer A, ...other: any) => infer R
   ? (args: A) => R
   : never;
 
-type StreamType2<T extends (...a: any) => any> = (
-  ...a: Parameters<T>
-) => EventStream<ReturnType<T>['initValue']>;
-
 type StreamType<T> = T extends (args: infer A) => infer R
   ? R extends TKStreamSuccess<infer V, any, any> ? (args: A) => EventStream<V>
   : never
   : never;
 
-type InstanceType<
-  T extends (...a: any) => any,
-  G = ToBase<ReturnType<T>["_undefinedrouter"]>
-> = (...a: Parameters<T>) => G;
+type InstanceType<T, IR> = T extends (...a: any) => any
+  ? (...a: Parameters<T>) => ToBase<IR>
+  : never;
 
 type ToBase<T> = T extends Call
   ? { [K in keyof Pick<T, "call">]: KeepFirstArg<T["call"]> }
   : T extends Stream
   ? { [K in keyof Pick<T, "stream">]: StreamType<KeepFirstArg<T["stream"]>> }
-  : T extends Instance
+  : T extends Instance<infer IR>
   ? {
     [K in keyof Pick<T, "instance">]: InstanceType<
-      KeepFirstArg<T["instance"]>
+      KeepFirstArg<T["instance"]>, IR
     >;
   }
   : T extends object ? {
@@ -346,9 +341,10 @@ let r = tk.router({
 let test2 = tk.router({
   testinstance: tk.instance(c, (_args, ctx) => fetch, User),
 })
-type Expected = ToClient<typeof test2>;
+type Expected = ToClient<typeof r>;
 
 let rasd: Expected;
+
 //rasd.call()
 //rasd.subrouter.
 

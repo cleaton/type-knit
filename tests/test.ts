@@ -28,6 +28,7 @@ let instanceRouter = tk.router({
 
 let tkr = tk.router({
   hello: tk.call(User, (args) => `Hello ${args.username}!`),
+  helloasync: tk.call(User, async (args) => `Hello ${args.username} async!`),
   hellostream: tk.stream(User, (args) => {
     send(5)
     return {type: "success", topic: "testtopic", initValue: {nested: "initVal", nr: 6}}
@@ -61,6 +62,13 @@ tktest('simple call', async () => {
                       .hello
                       .call({ username: "TK" });
   assert.is(r, "Hello TK!")
+});
+
+tktest('simple call async', async () => {
+  let r = await client.e()
+                      .helloasync
+                      .call({ username: "TK" });
+  assert.is(r, "Hello TK async!")
 });
 
 tktest('simple instance call', async () => {
