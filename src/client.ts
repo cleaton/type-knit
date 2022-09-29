@@ -1,10 +1,9 @@
-import { ClientStreamEvent, EventStream } from "./server";
+import { Call, Instance, MaybeAsync, Router, Stream, StreamReturn, tkerr, TKInternalKeys, TKOK, tkok, TKStreamResult } from "./server";
 
 function exec<T>(target: TKProxyTarget, executeRequest: (req: Request) => T) {
   return (args: unknown) => {
     const url = new URL(target.url);
     url.pathname = url.pathname + target.execPath;
-    console.log(url.pathname)
     target.execArgs.push(args);
     let r = new target.impl.Request(url, {
       ...target.options,
@@ -60,9 +59,9 @@ class EventStreamImpl<T> implements EventStream<T> {
 async function handleCall(req: Request) {
   const resp = await fetch(req)
   if (resp.status === 200) {
-    return [await resp.json(), undefined]
+    return tkok(await resp.json())
   }
-  return [undefined, await resp.text()]
+  return tkerr(await resp.text(), resp.status)
 }
 
 const proxyHandler: ProxyHandler<any> = {
@@ -79,7 +78,6 @@ const proxyHandler: ProxyHandler<any> = {
       case "instance":
         return (args: unknown) => {
           target.execArgs.push(args);
-          //console.log('instnae', target)
           return new Proxy(target, proxyHandler);
         };
       default:
@@ -87,6 +85,55 @@ const proxyHandler: ProxyHandler<any> = {
     }
   },
 };
+
+export type CSEConnecting = { state: 'connecting' }
+export type CSEConnected = { state: 'connected' }
+export type CSEData<T> = { state: 'data', data: T }
+export type CSEReconnecting<T> = { state: 'reconnecting', lastError?: string, lastData?: T }
+export type CSEDone<T> = { state: 'done', lastData?: T }
+
+export type ClientStreamEvent<T> = CSEConnecting  | CSEConnected | CSEData<T> | CSEReconnecting<T> | CSEDone<T>
+
+export interface EventStream<T> {
+  cancel(): Promise<void>;
+  start(cb: (event: ClientStreamEvent<T>) => void): void;
+}
+
+type KeepFirstArg<F> = F extends (args: infer A, ...other: any) => infer R
+  ? R extends MaybeAsync<infer RA>
+  ? (args: A) => RA
+  : never
+  : never;
+
+type CallType<T> = T extends (args: infer A) => MaybeAsync<infer R>
+  ? (args: A) => Promise<R>
+  : never;
+
+type StreamType<T> = T extends (args: infer A) => MaybeAsync<infer R>
+  ? R extends TKOK<StreamReturn<infer V, any, any>>
+  ? (args: A) => EventStream<V>
+  : never
+  : never;
+
+type InstanceType<T, IR> = T extends (...a: any) => any
+  ? (...a: Parameters<T>) => ToBase<IR>
+  : never;
+
+type ToBase<T> = T extends Call
+  ? { [K in keyof Pick<T, "call">]: CallType<KeepFirstArg<T["call"]>> }
+  : T extends Stream
+  ? { [K in keyof Pick<T, "stream">]: StreamType<KeepFirstArg<T["stream"]>> }
+  : T extends Instance<infer IR>
+  ? {
+    [K in keyof Pick<T, "instance">]: InstanceType<
+      KeepFirstArg<T["instance"]>, IR
+    >;
+  }
+  : T extends object ? {
+    [K in keyof Omit<T, TKInternalKeys>]: ToBase<T[K]>;
+  }
+  : never
+export type ToClient<T extends Router> = ToBase<T>;
 
 type TKProxyTarget = {
   url: URL;

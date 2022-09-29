@@ -64,6 +64,7 @@ export type Topics = {
           : new Promise<T>((resolve) => {
               state.resolve = resolve;
             });
+        state.channel = undefined;
         const event = await channel;
         if (event.type === "close") {
           controller.close();

@@ -4,7 +4,7 @@ import * as assert from 'uvu/assert';
 import http from 'node:http'
 import { z } from "zod";
 import { createServerAdapter } from "@whatwg-node/server";
-import { TKBuilder, TKServerContext } from "../src/index";
+import { TKBuilder, tkok, TKServerContext } from "../src/index";
 import type { ToClient } from "../src/index";
 import { createClient } from "../src/index";
 
@@ -23,15 +23,15 @@ const send = (count: number) => {
 }
 
 let instanceRouter = tk.router({
-  hello: tk.call(User, (args) => `Hello ${args.username}! from instance`),
+  hello: tk.call(User, (args) => tkok(`Hello ${args.username}! from instance`)),
 })
 
 let tkr = tk.router({
-  hello: tk.call(User, (args) => `Hello ${args.username}!`),
-  helloasync: tk.call(User, async (args) => `Hello ${args.username} async!`),
+  hello: tk.call(User, (args) => tkok(`Hello ${args.username}!`)),
+  helloasync: tk.call(User, async (args) => tkok(`Hello ${args.username} async!`)),
   hellostream: tk.stream(User, (args) => {
     send(5)
-    return {type: "success", topic: "testtopic", initValue: {nested: "initVal", nr: 6}}
+    return tkok({topic: "testtopic", initValue: {nested: "initVal", nr: 6}})
   }),
   helloinstance: tk.instance(instanceRouter, (args, ctx) => (req: Request) => (instanceRouter.route({req})), User)
 });
@@ -58,26 +58,29 @@ tktest.before(async () => {
 })
 
 tktest('simple call', async () => {
-  let [success, error] = await client.e()
+  let res = await client.e()
                       .hello
                       .call({ username: "TK" });
-  assert.is(success, "Hello TK!")
+  let r = res.ok ? res.data : res.error
+  assert.is(r, "Hello TK!")
 });
 
 tktest('simple call async', async () => {
-  let [success, error] = await client.e()
+  let res = await client.e()
                       .helloasync
                       .call({ username: "TK" });
-  assert.is(success, "Hello TK async!")
+  let r = res.ok ? res.data : res.error
+  assert.is(r, "Hello TK async!")
 });
 
 tktest('simple instance call', async () => {
-  let [success, error] = await client.e()
+  let res = await client.e()
                       .helloinstance
                       .instance({username: "instance"})
                       .hello
                       .call({ username: "TK" });
-  assert.is(success, "Hello TK! from instance")
+  let r = res.ok ? res.data : res.error
+  assert.is(r, "Hello TK! from instance")
 });
 
 tktest('simple stream', async () => {
@@ -85,7 +88,7 @@ tktest('simple stream', async () => {
     const r = client.e()
                     .hellostream
                     .stream({ username: "TK" })
-    
+    const expected = [6, 5, 4, 3, 2, 1]
     r.start((ev) => {
       switch (ev.state) {
         case 'connected':
@@ -96,9 +99,13 @@ tktest('simple stream', async () => {
           break;
         case 'data':
           console.log("DATA: ", ev.data)
-          if (ev.data.nr === 1) {
+          const expect = expected.shift()
+          if (expected) {
+            assert.is(ev.data.nr, expect)
+          }
+          if (expected.length == 0) {
             r.cancel()
-            resolve(ev.data.nr)
+            resolve(true)
           }
           break;
         case 'done':
@@ -111,7 +118,7 @@ tktest('simple stream', async () => {
       }
     });
   }).then( data => {
-    assert.is(data, 1)
+    assert.is(data, true)
   })
 });
 
