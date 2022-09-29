@@ -8,7 +8,7 @@ import {
 } from "./events";
 
 type Sameish<T, U> = [T] extends [U] ? ([U] extends [T] ? T : never) : never;
-type MaybeAsync<T> = T | Promise<T>
+type MaybeAsync<T> = T | PromiseLike<T>
 
 export type TKServerContext = Omit<Record<string, any>, "req"> & {
   req: Request;
@@ -25,7 +25,6 @@ export type TKError = {
   error: string;
   status?: number;
 };
-
 export type TKCallResult<T> = TKError | TKCallSuccess<T>;
 export type TKStreamResult<V, T extends Topics, Ts extends keyof T> =
   | TKStreamSuccess<V, T, Ts>
@@ -272,11 +271,17 @@ export interface EventStream<T> {
 
 type KeepFirstArg<F> = F extends (args: infer A, ...other: any) => infer R
   ? R extends MaybeAsync<infer RA>
-  ? (args: A) => Promise<RA>
+  ? (args: A) => RA
   : never
   : never;
 
-type StreamType<T> = T extends (args: infer A) => Promise<infer R>
+type CallType<T> = T extends (args: infer A) => MaybeAsync<infer R>
+? R extends TKError
+? (args: A) => Promise<[undefined, string]>
+: (args: A) => Promise<[R, undefined]>
+: never;
+
+type StreamType<T> = T extends (args: infer A) => MaybeAsync<infer R>
   ? R extends TKStreamSuccess<infer V, any, any> ? (args: A) => EventStream<V>
   : never
   : never;
@@ -286,7 +291,7 @@ type InstanceType<T, IR> = T extends (...a: any) => any
   : never;
 
 type ToBase<T> = T extends Call
-  ? { [K in keyof Pick<T, "call">]: KeepFirstArg<T["call"]> }
+  ? { [K in keyof Pick<T, "call">]: CallType<KeepFirstArg<T["call"]>> }
   : T extends Stream
   ? { [K in keyof Pick<T, "stream">]: StreamType<KeepFirstArg<T["stream"]>> }
   : T extends Instance<infer IR>
@@ -326,8 +331,12 @@ let ks = tk.router({
 let b = tk.router({
   test2: tk.call(User, (args) => args.username),
 });
+
+async function fa() {
+  return 12345
+}
 let c = tk2.router({
-  test2: tk.call(User, (args) => new Promise<string>(resolve => resolve(args.username))),
+  test2: tk.call(User, (args) => fa()),
 });
 
 let r = tk.router({
@@ -347,6 +356,7 @@ let test2 = tk.router({
 type Expected = ToClient<typeof test2>;
 
 let rasd: Expected = r as any;
+//rasd.queue.instance({"username": "test"}).test2.call()
 //rasd.queue.instance({username: "test"}).test2.call()
 //rasd.call()
 //rasd.subrouter.

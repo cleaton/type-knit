@@ -58,26 +58,26 @@ tktest.before(async () => {
 })
 
 tktest('simple call', async () => {
-  let r = await client.e()
+  let [success, error] = await client.e()
                       .hello
                       .call({ username: "TK" });
-  assert.is(r, "Hello TK!")
+  assert.is(success, "Hello TK!")
 });
 
 tktest('simple call async', async () => {
-  let r = await client.e()
+  let [success, error] = await client.e()
                       .helloasync
                       .call({ username: "TK" });
-  assert.is(r, "Hello TK async!")
+  assert.is(success, "Hello TK async!")
 });
 
 tktest('simple instance call', async () => {
-  let r = await client.e()
+  let [success, error] = await client.e()
                       .helloinstance
                       .instance({username: "instance"})
                       .hello
                       .call({ username: "TK" });
-  assert.is(r, "Hello TK! from instance")
+  assert.is(success, "Hello TK! from instance")
 });
 
 tktest('simple stream', async () => {

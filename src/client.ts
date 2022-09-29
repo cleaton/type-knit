@@ -57,6 +57,14 @@ class EventStreamImpl<T> implements EventStream<T> {
   }
 }
 
+async function handleCall(req: Request) {
+  const resp = await fetch(req)
+  if (resp.status === 200) {
+    return [await resp.json(), undefined]
+  }
+  return [undefined, await resp.text()]
+}
+
 const proxyHandler: ProxyHandler<any> = {
   get(target: TKProxyTarget, prop, receiver) {
     let stringprop = prop as string;
@@ -65,7 +73,7 @@ const proxyHandler: ProxyHandler<any> = {
       : stringprop;
     switch (prop) {
       case "call":
-        return exec(target, (req) => fetch(req).then(resp => resp.json()));
+        return exec(target, (req) => handleCall(req));
       case "stream":
         return exec(target, (req) => new EventStreamImpl(req));
       case "instance":
