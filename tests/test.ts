@@ -12,11 +12,11 @@ const User = z.object({
   username: z.string(),
 });
 
-const tk = new TKBuilder<TKServerContext, {testtopic: {nested: string, nr: number}}>();
+const tk = new TKBuilder<TKServerContext, { testtopic: { nested: string, nr: number } }>();
 const send = (count: number) => {
   if (count) {
     setTimeout(() => {
-      tk.emit('testtopic', {type: "data", data: {nested: `count is: ${count}`, nr: count}})
+      tk.emit('testtopic', { type: "data", data: { nested: `count is: ${count}`, nr: count } })
       send(count - 1)
     }, 500)
   }
@@ -31,9 +31,9 @@ let tkr = tk.router({
   helloasync: tk.call(User, async (args) => tkok(`Hello ${args.username} async!`)),
   hellostream: tk.stream(User, (args) => {
     send(5)
-    return tkok({topic: "testtopic", initValue: {nested: "initVal", nr: 6}})
+    return tkok({ topic: "testtopic", initValue: { nested: "initVal", nr: 6 } })
   }),
-  helloinstance: tk.instance(instanceRouter, (args, ctx) => (req: Request) => (instanceRouter.route({req})), User),
+  helloinstance: tk.instance(instanceRouter, (args, ctx) => (req: Request) => (instanceRouter.route({ req })), User),
   nested: {
     hello: tk.call(User, (args) => tkok(`Hello ${args.username}! nested`))
   }
@@ -47,7 +47,7 @@ const server = http.createServer(
   createServerAdapter((req) => {
     let path = new URL(req.url).pathname
     if (path.startsWith('/api')) {
-      return tkrp.route({req}, '/api')
+      return tkrp.route({ req }, '/api')
     }
     return tkr.route({ req });
   })
@@ -71,43 +71,43 @@ tktest.before(async () => {
 
 tktest('handle prefix', async () => {
   let res = await prefixclient.e()
-                      .helloprefix
-                      .call({ username: "TK" });
+    .helloprefix
+    .call({ username: "TK" });
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello TK! prefixed")
 });
 
 tktest('handle nested', async () => {
   let res = await client.e()
-                      .nested
-                      .hello
-                      .call({ username: "TK" });
+    .nested
+    .hello
+    .call({ username: "TK" });
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello TK! nested")
 });
 
 tktest('simple call', async () => {
   let res = await client.e()
-                      .hello
-                      .call({ username: "TK" });
+    .hello
+    .call({ username: "TK" });
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello TK!")
 });
 
 tktest('simple call async', async () => {
   let res = await client.e()
-                      .helloasync
-                      .call({ username: "TK" });
+    .helloasync
+    .call({ username: "TK" });
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello TK async!")
 });
 
 tktest('simple instance call', async () => {
   let res = await client.e()
-                      .helloinstance
-                      .instance({username: "instance"})
-                      .hello
-                      .call({ username: "TK" });
+    .helloinstance
+    .instance({ username: "instance" })
+    .hello
+    .call({ username: "TK" });
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello TK! from instance")
 });
@@ -115,8 +115,8 @@ tktest('simple instance call', async () => {
 tktest('simple stream', async () => {
   return new Promise(resolve => {
     const r = client.e()
-                    .hellostream
-                    .stream({ username: "TK" })
+      .hellostream
+      .stream({ username: "TK" })
     const expected = [6, 5, 4, 3, 2, 1]
     r.start((ev) => {
       switch (ev.state) {
@@ -146,7 +146,7 @@ tktest('simple stream', async () => {
           break;
       }
     });
-  }).then( data => {
+  }).then(data => {
     assert.is(data, true)
   })
 });

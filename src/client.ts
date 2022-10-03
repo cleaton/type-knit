@@ -16,15 +16,15 @@ function exec<T>(target: TKProxyTarget, executeRequest: (req: Request) => T) {
 class EventStreamImpl<T> implements EventStream<T> {
   private cancelled = false;
   private reader?: ReadableStreamDefaultReader<string>
-  constructor(private req: Request) {}
+  constructor(private req: Request) { }
   async cancel() {
     this.cancelled = true
     this.reader?.cancel()
   }
   async start(cb: (event: ClientStreamEvent<T>) => void) {
-    cb({state: 'connecting'})
+    cb({ state: 'connecting' })
     let resp = await fetch(this.req)
-    cb({state: 'connected'})
+    cb({ state: 'connected' })
     const body = resp.body
     let lastData: T | undefined
     if (body) {
@@ -32,7 +32,7 @@ class EventStreamImpl<T> implements EventStream<T> {
       let buffer = '';
       let endOfStream = false
       while (!this.cancelled) {
-        let {done, value} = await this.reader.read()
+        let { done, value } = await this.reader.read()
         if (done) {
           endOfStream = true
           break;
@@ -42,7 +42,7 @@ class EventStreamImpl<T> implements EventStream<T> {
             buffer += value.slice(0, end)
             let data = JSON.parse(buffer)
             lastData = data
-            cb({state: "data", data})
+            cb({ state: "data", data })
             buffer = value.slice(end + 1)
           } else {
             buffer += value
@@ -50,7 +50,7 @@ class EventStreamImpl<T> implements EventStream<T> {
         }
       }
       if (endOfStream) {
-        cb({state: "done", lastData})
+        cb({ state: "done", lastData })
       }
     }
   }
@@ -92,7 +92,7 @@ export type CSEData<T> = { state: 'data', data: T }
 export type CSEReconnecting<T> = { state: 'reconnecting', lastError?: string, lastData?: T }
 export type CSEDone<T> = { state: 'done', lastData?: T }
 
-export type ClientStreamEvent<T> = CSEConnecting  | CSEConnected | CSEData<T> | CSEReconnecting<T> | CSEDone<T>
+export type ClientStreamEvent<T> = CSEConnecting | CSEConnected | CSEData<T> | CSEReconnecting<T> | CSEDone<T>
 
 export interface EventStream<T> {
   cancel(): Promise<void>;
@@ -161,10 +161,10 @@ export function createClient<T>(
   const impl: FetchImpl = fetchImpl
     ? fetchImpl
     : {
-        fetch: fetch,
-        Request: Request,
-        Response: Response,
-      };
+      fetch: fetch,
+      Request: Request,
+      Response: Response,
+    };
   const requiredOptions = { method: "POST" };
   const requiredHeaders = { "content-type": "application/json" };
   const baseOptions = options ? options : {};
@@ -202,4 +202,4 @@ export function createClient<T>(
   };
 }
 
-export {};
+export { };
