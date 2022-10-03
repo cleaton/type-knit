@@ -36,8 +36,16 @@ let tkr = tk.router({
   helloinstance: tk.instance(instanceRouter, (args, ctx) => (req: Request) => (instanceRouter.route({req})), User)
 });
 
+let tkrp = tk.router({
+  helloprefix: tk.call(User, (args) => tkok(`Hello ${args.username}! Prefixed`)),
+})
+
 const server = http.createServer(
   createServerAdapter((req) => {
+    let path = new URL(req.url).pathname
+    if (path.startsWith('/api')) {
+      return tkrp.route({req}, '/api')
+    }
     return tkr.route({ req });
   })
 );
@@ -49,6 +57,7 @@ const serverStart = new Promise((resolve, reject) => {
 });
 type MyServer = ToClient<typeof tkr>;
 let client = createClient<MyServer>("http://127.0.0.1:3000");
+let prefixclient = createClient<ToClient<typeof tkrp>>("http://127.0.0.1:3000/api");
 
 
 const tktest = suite('type-knit');
@@ -56,6 +65,14 @@ const tktest = suite('type-knit');
 tktest.before(async () => {
   await serverStart
 })
+
+tktest('handle prefix', async () => {
+  let res = await prefixclient.e()
+                      .helloprefix
+                      .call({ username: "TK" });
+  let r = res.ok ? res.data : res.error
+  assert.is(r, "Hello TK! Prefixed")
+});
 
 tktest('simple call', async () => {
   let res = await client.e()

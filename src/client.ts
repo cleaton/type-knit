@@ -172,6 +172,7 @@ export function createClient<T>(
     ? options.headers
     : {};
   const u = new URL(url);
+  u.pathname = u.pathname.endsWith('/') ? u.pathname : u.pathname + '/'
 
   return {
     e: (override?: TKFetchOptions): T => {

@@ -15,27 +15,29 @@ export interface Parsable {
 
 type ParseType<T> = T extends Parsable ? ReturnType<T['parse']> : never;
 
-function parseArgs<T extends Parsable>(args: unknown, schema: T): {ok: true, data: ParseType<T>} | {ok: false, error: Response } {
+function parseArgs<T extends Parsable>(args: unknown, schema: T): { ok: true, data: ParseType<T> } | { ok: false, error: Response } {
   let data;
   try {
     data = schema.parse(args)
   } catch (error) {
-    return {ok: false, error: new Response(JSON.stringify(error), { status: 400 })}
+    return { ok: false, error: new Response(JSON.stringify(error), { status: 400 }) }
   }
-  return {ok: true, data}
+  return { ok: true, data }
 }
 
 export type TKServerContext = Omit<Record<string, any>, "req"> & {
   req: Request;
 };
 
-export type TKOK<T> = {ok: true, data: T}
-export type TKERR = {ok: false, error: string, status?: number}
-export function tkok<T>(data: T): TKOK<T> { return {ok: true, data} }
-export function tkerr(error: string, status?: number): TKERR { return {ok: false, error, status}}
+export type TKOK<T> = { ok: true, data: T }
+export type TKERR = { ok: false, error: string, status?: number }
+export function tkok<T>(data: T): TKOK<T> {
+  return { ok: true, data }
+}
+export function tkerr(error: string, status?: number): TKERR { return { ok: false, error, status } }
 
 export type TKResult<T> = TKOK<T> | TKERR
-export type StreamReturn<V, T extends Topics, Ts extends keyof T> = {topic: Ts, initValue?: Sameish<V, T[Ts]>}
+export type StreamReturn<V, T extends Topics, Ts extends keyof T> = { topic: Ts, initValue?: Sameish<V, T[Ts]> }
 export type TKStreamResult<V, T extends Topics, Ts extends keyof T> =
   | TKOK<StreamReturn<V, T, Ts>>
   | TKERR;
@@ -89,7 +91,7 @@ export type MiddleWare<Ctx extends TKServerContext = any> = {
 export type Router<Ctx extends TKServerContext = any> = {
   _type: "router";
   _middlewares: MiddleWare[];
-  route: (ctx: Ctx & MaybeTKInternals) => Promise<Response>;
+  route: (ctx: Ctx & MaybeTKInternals, prefix?: string) => Promise<Response>;
 };
 
 export type TKInternalKeys = "_type" | "_schema" | "_middlewares" | "route" | "instance" | "call" | "stream";
@@ -173,7 +175,7 @@ export class TKBuilder<
       ...routes,
       _middlewares: middlewares,
       _type: "router",
-      route: async (ctx: Ctx & MaybeTKInternals) => {
+      route: async (ctx: Ctx & MaybeTKInternals, prefix: string = "/") => {
         for (const m of middlewares) {
           let out = m.handle(ctx);
           if (out.type == "response") {
@@ -185,20 +187,24 @@ export class TKBuilder<
           };
         }
         if (!ctx.__tk_internals) {
-          const url = new URL(ctx.req.url);
-          const paths = url.pathname.split("/");
-          paths.shift();
-          let tkreq = await ctx.req.json();
-          if (typeof tkreq !== "object") {
-            return new Response("bad request", { status: 400 });
-          }
-          tkreq.args = tkreq.args ? tkreq.args : [];
-          if (!Array.isArray(tkreq.args)) {
-            return new Response("bad request", { status: 400 });
+          let pathname = new URL(ctx.req.url).pathname;
+          let paths: string[] = []
+          let tkreq = { args: [] }
+          prefix = prefix.endsWith('/') ? prefix : prefix + '/'
+          if (pathname.startsWith(prefix)) {
+            paths = pathname.replace(prefix, "").split("/");
+            tkreq = await ctx.req.json();
+            if (typeof tkreq !== "object") {
+              return new Response("bad request", { status: 400 });
+            }
+            tkreq.args = tkreq.args ? tkreq.args : [];
+            if (!Array.isArray(tkreq.args)) {
+              return new Response("bad request", { status: 400 });
+            }
           }
           ctx.__tk_internals = {
             index: 0,
-            paths: paths,
+            paths,
             tkreq,
           };
         }
