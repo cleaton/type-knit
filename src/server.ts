@@ -96,7 +96,7 @@ export type Router<Ctx extends TKServerContext = any> = {
 
 export type TKInternalKeys = "_type" | "_schema" | "_middlewares" | "route" | "instance" | "call" | "stream";
 type Routes<Ctx extends TKServerContext = any> = {
-  [key: string]: Call | Stream | Router<Ctx> | Instance;
+  [key: string]: Call | Stream | Router<Ctx> | Instance | Routes<Ctx>;
 };
 
 type TKRequest = {
@@ -209,8 +209,9 @@ export class TKBuilder<
           };
         }
         let path = ctx.__tk_internals.paths.shift()
-        while (path && routes[path]) {
-          const obj = routes[path];
+        let r: Routes | undefined = routes
+        while (path && r && r[path]) {
+          const obj = r[path];
           switch (obj._type) {
             case "call": {
               const payload = ctx.__tk_internals.tkreq.args.shift();
@@ -267,7 +268,8 @@ export class TKBuilder<
               return obj.route(ctx);
             }
             default: {
-              ctx.__tk_internals.paths.shift()
+              r = r[path] as Routes
+              path = ctx.__tk_internals.paths.shift()
             }
           }
         }

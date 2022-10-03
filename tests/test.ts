@@ -33,11 +33,14 @@ let tkr = tk.router({
     send(5)
     return tkok({topic: "testtopic", initValue: {nested: "initVal", nr: 6}})
   }),
-  helloinstance: tk.instance(instanceRouter, (args, ctx) => (req: Request) => (instanceRouter.route({req})), User)
+  helloinstance: tk.instance(instanceRouter, (args, ctx) => (req: Request) => (instanceRouter.route({req})), User),
+  nested: {
+    hello: tk.call(User, (args) => tkok(`Hello ${args.username}! nested`))
+  }
 });
 
 let tkrp = tk.router({
-  helloprefix: tk.call(User, (args) => tkok(`Hello ${args.username}! Prefixed`)),
+  helloprefix: tk.call(User, (args) => tkok(`Hello ${args.username}! prefixed`)),
 })
 
 const server = http.createServer(
@@ -71,7 +74,16 @@ tktest('handle prefix', async () => {
                       .helloprefix
                       .call({ username: "TK" });
   let r = res.ok ? res.data : res.error
-  assert.is(r, "Hello TK! Prefixed")
+  assert.is(r, "Hello TK! prefixed")
+});
+
+tktest('handle nested', async () => {
+  let res = await client.e()
+                      .nested
+                      .hello
+                      .call({ username: "TK" });
+  let r = res.ok ? res.data : res.error
+  assert.is(r, "Hello TK! nested")
 });
 
 tktest('simple call', async () => {
