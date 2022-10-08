@@ -247,6 +247,7 @@ export class TKBuilder<
               if (result.data.initValue) {
                 publish({ type: "data", data: result.data.initValue })
               }
+
               return new Response(es.readable, {
                 status: 200,
                 headers: {

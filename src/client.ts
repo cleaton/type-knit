@@ -24,6 +24,7 @@ class EventStreamImpl<T> implements EventStream<T> {
   async start(cb: (event: ClientStreamEvent<T>) => void) {
     cb({ state: 'connecting' })
     let resp = await fetch(this.req)
+    if (resp.ok) {
     cb({ state: 'connected' })
     const body = resp.body
     let lastData: T | undefined
@@ -53,6 +54,10 @@ class EventStreamImpl<T> implements EventStream<T> {
         cb({ state: "done", lastData })
       }
     }
+  } else {
+    //TODO: better error handling
+    console.log(await resp.body)
+  }
   }
 }
 
