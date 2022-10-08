@@ -171,7 +171,14 @@ export function createClient<T>(
   const baseHeaders: Record<string, string> = options?.headers
     ? options.headers
     : {};
-  const u = new URL(url);
+  
+  let u: URL
+  try {
+    u = new URL(url);
+  } catch (error) {
+    u = new URL(url, origin)
+  }
+  
   u.pathname = u.pathname.endsWith('/') ? u.pathname : u.pathname + '/'
 
   return {

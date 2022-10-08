@@ -113,6 +113,10 @@ type MaybeTKInternals = {
   __tk_internals?: TKInternals;
 };
 
+interface Fetch {
+  fetch: (req: Request) => Promise<Response>
+}
+
 // Build API
 export class TKBuilder<
   Ctx extends TKServerContext,
@@ -130,7 +134,7 @@ export class TKBuilder<
     f: (
       args: ParseType<SchemaType>,
       ctx: Ctx
-    ) => MaybeAsync<(req: Request) => Promise<Response>>,
+    ) => MaybeAsync<Fetch>,
     schema?: SchemaType,
     middlewares: MiddleWare<Ctx>[] = []
   ): Instance<R, Parsable, ParseType<SchemaType>, Ctx> {
@@ -138,9 +142,7 @@ export class TKBuilder<
       _type: "instance",
       _schema: schema,
       _middlewares: middlewares,
-      instance: async (args: ParseType<SchemaType>, ctx: Ctx) => ({
-        fetch: await f(args, ctx),
-      }),
+      instance: async (args: ParseType<SchemaType>, ctx: Ctx) => f(args, ctx),
     };
   }
   call<SchemaType extends Parsable, Out>(
@@ -258,11 +260,18 @@ export class TKBuilder<
               const payload = ctx.__tk_internals.tkreq.args.shift();
               const parsed = parseArgs(payload, obj._schema)
               if (!parsed.ok) return parsed.error
-              const { fetch } = await obj.instance(parsed.data, ctx);
+              const fetchImpl = await obj.instance(parsed.data, ctx);
               let url = new URL(ctx.req.url);
               ctx.__tk_internals.paths.shift();
+              const body = JSON.stringify(ctx.__tk_internals.tkreq)
               url.pathname = ctx.__tk_internals.paths.join('/')
-              return fetch(new Request(url, { headers: ctx.req.headers, method: 'POST', body: JSON.stringify(ctx.__tk_internals.tkreq) }));
+              const headers = new Headers()
+              for (const [header, value] of (ctx.req.headers as any).entries()) {
+                if(header !== 'content-length') {
+                  headers.append(header, value)
+                }
+              }
+              return fetchImpl.fetch(new Request(url, { headers, method: 'POST', body  }));
             }
             case "router": {
               return obj.route(ctx);
