@@ -16,14 +16,14 @@ function exec<T>(target: TKProxyTarget, executeRequest: (req: Request) => T) {
 class EventStreamImpl<T> implements EventStream<T> {
   private cancelled = false;
   private reader?: ReadableStreamDefaultReader<string>
-  constructor(private req: Request) { }
+  constructor(private impl: FetchImpl, private req: Request) { }
   async cancel() {
     this.cancelled = true
     this.reader?.cancel()
   }
   async start(cb: (event: ClientStreamEvent<T>) => void) {
     cb({ state: 'connecting' })
-    let resp = await fetch(this.req)
+    let resp = await this.impl.fetch(this.req)
     if (resp.ok) {
     cb({ state: 'connected' })
     const body = resp.body
@@ -61,8 +61,8 @@ class EventStreamImpl<T> implements EventStream<T> {
   }
 }
 
-async function handleCall(req: Request) {
-  const resp = await fetch(req)
+async function handleCall(impl: FetchImpl, req: Request) {
+  const resp = await impl.fetch(req)
   if (resp.status === 200) {
     return tkok(await resp.json())
   }
@@ -77,9 +77,9 @@ const proxyHandler: ProxyHandler<any> = {
       : stringprop;
     switch (prop) {
       case "call":
-        return exec(target, (req) => handleCall(req));
+        return exec(target, (req) => handleCall(target.impl, req));
       case "stream":
-        return exec(target, (req) => new EventStreamImpl(req));
+        return exec(target, (req) => new EventStreamImpl(target.impl, req));
       case "instance":
         return (args: unknown) => {
           target.execArgs.push(args);
@@ -124,7 +124,7 @@ type InstanceType<T, IR> = T extends (...a: any) => any
   ? (...a: Parameters<T>) => ToBase<IR>
   : never;
 
-type ToBase<T> = T extends Call
+export type ToBase<T> = T extends Call
   ? { [K in keyof Pick<T, "call">]: CallType<KeepFirstArg<T["call"]>> }
   : T extends Stream
   ? { [K in keyof Pick<T, "stream">]: StreamType<KeepFirstArg<T["stream"]>> }
@@ -134,7 +134,7 @@ type ToBase<T> = T extends Call
       KeepFirstArg<T["instance"]>, IR
     >;
   }
-  : T extends object ? {
+  : T extends Record<string, any> ? {
     [K in keyof Omit<T, TKInternalKeys>]: ToBase<T[K]>;
   }
   : never

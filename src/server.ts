@@ -1,3 +1,4 @@
+import { createClient, ToBase, ToClient } from "./client";
 import {
   Emitter,
   EventEmitter,
@@ -94,7 +95,7 @@ export type Router<Ctx extends TKServerContext = any> = {
   route: (ctx: Ctx & MaybeTKInternals, prefix?: string) => Promise<Response>;
 };
 
-export type TKInternalKeys = "_type" | "_schema" | "_middlewares" | "route" | "instance" | "call" | "stream";
+export type TKInternalKeys = "_type" | "_schema" | "_middlewares" | "route" | "instance" | "call" | "stream" | "tkclient";
 type Routes<Ctx extends TKServerContext = any> = {
   [key: string]: Call | Stream | Router<Ctx> | Instance | Routes<Ctx>;
 };
@@ -171,120 +172,123 @@ export class TKBuilder<
   }
   router<R extends Routes>(
     routes: R,
-    middlewares: MiddleWare<Ctx>[] = []
-  ): Router<Ctx> & R {
+    prefix: string = "/",
+    middlewares: MiddleWare<Ctx>[] = [],
+  ): Router<Ctx> & R & {tkclient: ToBase<R>} {
+    prefix = prefix.endsWith('/') ? prefix : prefix + '/'
+    const route = async (ctx: Ctx & MaybeTKInternals) => {
+      for (const m of middlewares) {
+        let out = m.handle(ctx);
+        if (out.type == "response") {
+          return out.data;
+        }
+        ctx = {
+          ...out.data,
+          __tk_internals: ctx.__tk_internals,
+        };
+      }
+      if (!ctx.__tk_internals) {
+        let pathname = new URL(ctx.req.url).pathname;
+        let paths: string[] = []
+        let tkreq = { args: [] }
+        if (pathname.startsWith(prefix)) {
+          paths = pathname.replace(prefix, "").split("/");
+          tkreq = await ctx.req.json();
+          if (typeof tkreq !== "object") {
+            return new Response("bad request", { status: 400 });
+          }
+          tkreq.args = tkreq.args ? tkreq.args : [];
+          if (!Array.isArray(tkreq.args)) {
+            return new Response("bad request", { status: 400 });
+          }
+        }
+        ctx.__tk_internals = {
+          index: 0,
+          paths,
+          tkreq,
+        };
+      }
+      let path = ctx.__tk_internals.paths.shift()
+      let r: Routes | undefined = routes
+      while (path && r && r[path]) {
+        const obj = r[path];
+        switch (obj._type) {
+          case "call": {
+            const payload = ctx.__tk_internals.tkreq.args.shift();
+            const parsed = parseArgs(payload, obj._schema)
+            if (!parsed.ok) return parsed.error
+            const result = await obj.call(parsed.data, ctx);
+            if (!result.ok) {
+              const status = result.status ? result.status : 400;
+              return new Response(result.error, { status });
+            }
+            return new Response(JSON.stringify(result.data), {
+              status: 200,
+            });
+          }
+          case "stream": {
+            const payload = ctx.__tk_internals.tkreq.args.shift();
+            const parsed = parseArgs(payload, obj._schema)
+            if (!parsed.ok) return parsed.error
+            const result = await obj.stream(parsed.data, ctx);
+            if (!result.ok) {
+              const status = result.status ? result.status : 400;
+              return new Response(result.error, { status });
+            }
+            let publish: (event: StreamEvent<unknown>) => void;
+            const unsub = this.emitter.subscribe(
+              result.data.topic,
+              (event: StreamEvent<unknown>) => publish && publish(event)
+            );
+            const es = eventStream(() => unsub());
+            publish = es.publish;
+            if (result.data.initValue) {
+              publish({ type: "data", data: result.data.initValue })
+            }
+
+            return new Response(es.readable, {
+              status: 200,
+              headers: {
+                "Content-Type": "text/event-stream",
+                Connection: "keep-alive",
+                "Cache-Control": "no-cache",
+              },
+            });
+          }
+          case "instance": {
+            const payload = ctx.__tk_internals.tkreq.args.shift();
+            const parsed = parseArgs(payload, obj._schema)
+            if (!parsed.ok) return parsed.error
+            const fetchImpl = await obj.instance(parsed.data, ctx);
+            let url = new URL(ctx.req.url);
+            ctx.__tk_internals.paths.shift();
+            const body = JSON.stringify(ctx.__tk_internals.tkreq)
+            url.pathname = ctx.__tk_internals.paths.join('/')
+            const headers = new Headers()
+            for (const [header, value] of (ctx.req.headers as any).entries()) {
+              if(header !== 'content-length') {
+                headers.append(header, value)
+              }
+            }
+            return fetchImpl.fetch(new Request(url, { headers, method: 'POST', body  }));
+          }
+          case "router": {
+            return obj.route(ctx);
+          }
+          default: {
+            r = r[path] as Routes
+            path = ctx.__tk_internals.paths.shift()
+          }
+        }
+      }
+      return new Response("route not found", { status: 404 });
+    }
     return {
       ...routes,
       _middlewares: middlewares,
       _type: "router",
-      route: async (ctx: Ctx & MaybeTKInternals, prefix: string = "/") => {
-        for (const m of middlewares) {
-          let out = m.handle(ctx);
-          if (out.type == "response") {
-            return out.data;
-          }
-          ctx = {
-            ...out.data,
-            __tk_internals: ctx.__tk_internals,
-          };
-        }
-        if (!ctx.__tk_internals) {
-          let pathname = new URL(ctx.req.url).pathname;
-          let paths: string[] = []
-          let tkreq = { args: [] }
-          prefix = prefix.endsWith('/') ? prefix : prefix + '/'
-          if (pathname.startsWith(prefix)) {
-            paths = pathname.replace(prefix, "").split("/");
-            tkreq = await ctx.req.json();
-            if (typeof tkreq !== "object") {
-              return new Response("bad request", { status: 400 });
-            }
-            tkreq.args = tkreq.args ? tkreq.args : [];
-            if (!Array.isArray(tkreq.args)) {
-              return new Response("bad request", { status: 400 });
-            }
-          }
-          ctx.__tk_internals = {
-            index: 0,
-            paths,
-            tkreq,
-          };
-        }
-        let path = ctx.__tk_internals.paths.shift()
-        let r: Routes | undefined = routes
-        while (path && r && r[path]) {
-          const obj = r[path];
-          switch (obj._type) {
-            case "call": {
-              const payload = ctx.__tk_internals.tkreq.args.shift();
-              const parsed = parseArgs(payload, obj._schema)
-              if (!parsed.ok) return parsed.error
-              const result = await obj.call(parsed.data, ctx);
-              if (!result.ok) {
-                const status = result.status ? result.status : 400;
-                return new Response(result.error, { status });
-              }
-              return new Response(JSON.stringify(result.data), {
-                status: 200,
-              });
-            }
-            case "stream": {
-              const payload = ctx.__tk_internals.tkreq.args.shift();
-              const parsed = parseArgs(payload, obj._schema)
-              if (!parsed.ok) return parsed.error
-              const result = await obj.stream(parsed.data, ctx);
-              if (!result.ok) {
-                const status = result.status ? result.status : 400;
-                return new Response(result.error, { status });
-              }
-              let publish: (event: StreamEvent<unknown>) => void;
-              const unsub = this.emitter.subscribe(
-                result.data.topic,
-                (event: StreamEvent<unknown>) => publish && publish(event)
-              );
-              const es = eventStream(() => unsub());
-              publish = es.publish;
-              if (result.data.initValue) {
-                publish({ type: "data", data: result.data.initValue })
-              }
-
-              return new Response(es.readable, {
-                status: 200,
-                headers: {
-                  "Content-Type": "text/event-stream",
-                  Connection: "keep-alive",
-                  "Cache-Control": "no-cache",
-                },
-              });
-            }
-            case "instance": {
-              const payload = ctx.__tk_internals.tkreq.args.shift();
-              const parsed = parseArgs(payload, obj._schema)
-              if (!parsed.ok) return parsed.error
-              const fetchImpl = await obj.instance(parsed.data, ctx);
-              let url = new URL(ctx.req.url);
-              ctx.__tk_internals.paths.shift();
-              const body = JSON.stringify(ctx.__tk_internals.tkreq)
-              url.pathname = ctx.__tk_internals.paths.join('/')
-              const headers = new Headers()
-              for (const [header, value] of (ctx.req.headers as any).entries()) {
-                if(header !== 'content-length') {
-                  headers.append(header, value)
-                }
-              }
-              return fetchImpl.fetch(new Request(url, { headers, method: 'POST', body  }));
-            }
-            case "router": {
-              return obj.route(ctx);
-            }
-            default: {
-              r = r[path] as Routes
-              path = ctx.__tk_internals.paths.shift()
-            }
-          }
-        }
-        return new Response("route not found", { status: 404 });
-      },
+      route,
+      tkclient: createClient<ToBase<R>>("http://localhost" + prefix, {fetch: route}).e()
     };
   }
 }
