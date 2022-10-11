@@ -7,7 +7,7 @@ import {
   Topics,
 } from "./events";
 
-type Sameish<T, U> = [T] extends [U] ? ([U] extends [T] ? T : never) : never;
+type Sameish<T, U> = [T] extends [U] ? ([U] extends [T] ? T : U extends unknown ? T : never) : T extends unknown ? U : never;
 export type MaybeAsync<T> = T | PromiseLike<T>
 
 export interface Parsable {
@@ -42,6 +42,11 @@ export type StreamReturn<V, T extends Topics, Ts extends keyof T> = { topic: Ts,
 export type TKStreamResult<V, T extends Topics, Ts extends keyof T> =
   | TKOK<StreamReturn<V, T, Ts>>
   | TKERR;
+
+export function tkstream<T>
+    (topic: string, initValue?: T) { 
+  return tkok({topic, initValue })
+}
 
 export type Instance<
   R extends Router = any,
@@ -242,10 +247,11 @@ export class TKBuilder<
             );
             const es = eventStream(() => unsub());
             publish = es.publish;
-            if (result.data.initValue) {
+            if (result.data.initValue !== undefined) {
               publish({ type: "data", data: result.data.initValue })
+            } else {
+              publish({type: "ping"})
             }
-
             return new Response(es.readable, {
               status: 200,
               headers: {

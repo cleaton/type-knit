@@ -37,16 +37,18 @@ class EventStreamImpl<T> implements EventStream<T> {
         if (done) {
           endOfStream = true
           break;
-        } if (value) {
-          let end = value.indexOf("\n")
-          if (end) {
-            buffer += value.slice(0, end)
-            let data = JSON.parse(buffer)
-            lastData = data
-            cb({ state: "data", data })
-            buffer = value.slice(end + 1)
-          } else {
-            buffer += value
+        } 
+        if (value) {
+          buffer += value
+          let split = buffer.indexOf("\n")
+          while (split >= 0) {
+            let b = buffer.slice(0, split)
+            if (b !== "") { // empty newline === Ping
+              const data = JSON.parse(buffer)
+              cb({ state: "data", data })
+            }
+            buffer = buffer.slice(split + 1)
+            split = buffer.indexOf("\n")
           }
         }
       }
@@ -63,7 +65,7 @@ class EventStreamImpl<T> implements EventStream<T> {
 
 async function handleCall(impl: FetchImpl, req: Request) {
   const resp = await impl.fetch(req)
-  if (resp.status === 200) {
+  if (resp.ok) {
     return tkok(await resp.json())
   }
   return tkerr(await resp.text(), resp.status)

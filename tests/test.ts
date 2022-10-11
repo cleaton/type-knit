@@ -4,7 +4,7 @@ import * as assert from 'uvu/assert';
 import http from 'node:http'
 import { z } from "zod";
 import { createServerAdapter } from "@whatwg-node/server";
-import { TKBuilder, tkok, TKServerContext } from "../src/index";
+import { TKBuilder, tkok, TKServerContext, tkstream } from "../src/index";
 import type { ToClient } from "../src/index";
 import { createClient } from "../src/index";
 
@@ -26,6 +26,19 @@ let instanceRouter = tk.router({
   hello: tk.call(User, (args) => tkok(`Hello ${args.username}! from instance`)),
 })
 
+
+
+const tks = new TKBuilder<TKServerContext>();
+
+let arbitraryStream = tks.router({
+  hello: tks.stream(User, (args) => {
+    if (args.username.length < 3) {
+      return tkstream("startcase", 0)
+    }
+    return tkstream("endcase", 1)
+  }),
+}, '/arbitrary')
+
 let tkr = tk.router({
   hello: tk.call(User, (args) => tkok(`Hello ${args.username}!`)),
   helloasync: tk.call(User, async (args) => tkok(`Hello ${args.username} async!`)),
@@ -33,7 +46,7 @@ let tkr = tk.router({
     send(5)
     return tkok({ topic: "testtopic", initValue: { nested: "initVal", nr: 6 } })
   }),
-  helloinstance: tk.instance(instanceRouter, (args, ctx) => ({fetch: (req: Request) => instanceRouter.route({ req })}), User),
+  helloinstance: tk.instance(instanceRouter, (args, ctx) => ({ fetch: (req: Request) => instanceRouter.route({ req }) }), User),
   nested: {
     hello: tk.call(User, (args) => tkok(`Hello ${args.username}! nested`))
   }
@@ -41,13 +54,16 @@ let tkr = tk.router({
 
 let tkrp = tk.router({
   helloprefix: tk.call(User, (args) => tkok(`Hello ${args.username}! prefixed`)),
-})
+}, '/api')
 
 const server = http.createServer(
   createServerAdapter((req) => {
     let path = new URL(req.url).pathname
     if (path.startsWith('/api')) {
-      return tkrp.route({ req }, '/api')
+      return tkrp.route({ req })
+    }
+    if (path.startsWith('/arbitrary')) {
+      return arbitraryStream.route({ req })
     }
     return tkr.route({ req });
   })
@@ -61,7 +77,7 @@ const serverStart = new Promise((resolve, reject) => {
 type MyServer = ToClient<typeof tkr>;
 let client = createClient<MyServer>("http://127.0.0.1:3000");
 let prefixclient = createClient<ToClient<typeof tkrp>>("http://127.0.0.1:3000/api");
-
+let arbitraryclient = createClient<ToClient<typeof arbitraryStream>>("http://127.0.0.1:3000/arbitrary");
 
 const tktest = suite('type-knit');
 
@@ -111,8 +127,34 @@ tktest('simple instance call', async () => {
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello TK! from instance")
 });
+tktest('arbitrary topic stream', async () => {
+  await new Promise(resolve => {
+    const r = arbitraryclient.e()
+      .hello
+      .stream({ username: "TK" })
+    r.start((ev) => {
+      if (ev.state === 'data') {
+        assert.is(ev.data, 0)
+        r.cancel()
+        resolve(true)
+      }
+    })
+  })
+  await new Promise(resolve => {
+    const r = arbitraryclient.e()
+      .hello
+      .stream({ username: "TKA" })
+    r.start((ev) => {
+      if (ev.state === 'data') {
+        assert.is(ev.data, 1)
+        r.cancel()
+        resolve(true)
+      }
+    })
+  })
+})
 
-tktest('simple stream', async () => {
+tktest('simple fixed topic stream', async () => {
   return new Promise(resolve => {
     const r = client.e()
       .hellostream

@@ -4,7 +4,8 @@ export type Topics = {
 export type Unsubscribe = () => void;
 export type StreamEventData<T> = { type: "data"; data: T };
 export type StreamEventClose = { type: "close" };
-export type StreamEvent<T> = StreamEventData<T> | StreamEventClose;
+export type StreamEventPing = { type: "ping" };
+export type StreamEvent<T> = StreamEventData<T> | StreamEventClose | StreamEventPing;
 export interface Emitter<T extends Topics> {
   emit<Ts extends keyof T>(topic: Ts, event: StreamEvent<T[Ts]>): void;
   subscribe<Ts extends keyof T>(
@@ -66,11 +67,17 @@ export function eventStream<T extends StreamEvent<T>>(
         });
       state.channel = undefined;
       const event = await channel;
-      if (event.type === "close") {
-        controller.close();
-      } else {
-        const chunk = JSON.stringify(event.data);
-        controller.enqueue(textEncoder.encode(chunk + "\n"));
+      switch (event.type) {
+        case "close":
+          controller.close();
+          break;
+        case "data":
+          const chunk = JSON.stringify(event.data);
+          controller.enqueue(textEncoder.encode(chunk + "\n"));
+        case "ping":
+          controller.enqueue(textEncoder.encode("\n"));
+        default:
+          break;
       }
     },
     async cancel(e) {
