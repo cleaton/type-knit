@@ -82,6 +82,8 @@ While developing a service on Cloudflare Workers I reviewed ways to get typed AP
     * frontend should use bundler with tree shaking support to only include the required client parts
 * Always using POST, to have a single unified way to pass arguments
   * might need to change this allow functios to be cached using standard web caches?
+  * instead of single `.call()`, expose REST functions `.post()`, `.get()`, `.delete()` etc instead? with function arguments URL encoded for other methods.
+    * With URL encoded parameters, stream implementation could use native `EventSource()`. It's not used now as it only supports `GET`
 * Call path is part of the URL instead of inside the POST to be part of traditional web logs
 * Beta: RPC style api
 * Alpha: Streams
