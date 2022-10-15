@@ -1,0 +1,37 @@
+{
+  "name": "type-knit",
+  "version": "0.0.1",
+  "description": "Typed fetch based API optimized for edge",
+  "author": "Jesper Lundgren",
+  "license": "MIT",
+  "type": "module",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=18.8"
+  },
+  "devDependencies": {
+    "@types/node": "18.7.23",
+    "@whatwg-node/server": "0.4.5",
+    "typescript": "^4.8.3",
+    "uvu": "0.5.6",
+    "tsm": "2.2.2",
+    "c8": "7.12.0",
+    "zod": "^3.19.1"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --build --watch --incremental",
+    "test": "uvu -r tsm tests",
+    "test:coverage": "c8 --include=src npm test",
+    "test:report": "c8 report --reporter=text-lcov > coverage/coverage.lcov",
+    "prepare": "npm run build"
+  }
+}
