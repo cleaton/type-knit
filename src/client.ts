@@ -106,10 +106,10 @@ export interface EventStream<T> {
   start(cb: (event: ClientStreamEvent<T>) => void): void;
 }
 
-type KeepFirstArg<F> = F extends (args: infer A, ...other: any) => infer R
-  ? R extends MaybeAsync<infer RA>
-  ? (args: A) => RA
-  : never
+type GetArg<F> = F extends (first: any) => MaybeAsync<infer RA>
+  ? () => Promise<RA>
+  : F extends (first: infer A, ctx: any) => MaybeAsync<infer RA>
+  ? (args: A) => Promise<RA>
   : never;
 
 type CallType<T> = T extends (args: infer A) => MaybeAsync<infer R>
@@ -127,13 +127,13 @@ type InstanceType<T, IR> = T extends (...a: any) => any
   : never;
 
 export type ToBase<T> = T extends Call
-  ? { [K in keyof Pick<T, "call">]: CallType<KeepFirstArg<T["call"]>> }
+  ? { [K in keyof Pick<T, "call">]: GetArg<T["call"]> }
   : T extends Stream
-  ? { [K in keyof Pick<T, "stream">]: StreamType<KeepFirstArg<T["stream"]>> }
+  ? { [K in keyof Pick<T, "stream">]: StreamType<GetArg<T["stream"]>> }
   : T extends Instance<infer IR>
   ? {
     [K in keyof Pick<T, "instance">]: InstanceType<
-      KeepFirstArg<T["instance"]>, IR
+      GetArg<T["instance"]>, IR
     >;
   }
   : T extends Record<string, any> ? {

@@ -23,7 +23,7 @@ const send = (count: number) => {
 }
 
 let instanceRouter = tk.router({
-  hello: tk.call(User, (args) => tkok(`Hello ${args.username}! from instance`)),
+  hello: tk.call((args) => tkok(`Hello ${args.username}! from instance`), User),
 })
 
 
@@ -40,20 +40,21 @@ let arbitraryStream = tks.router({
 }, '/arbitrary')
 
 let tkr = tk.router({
-  hello: tk.call(User, (args) => tkok(`Hello ${args.username}!`)),
-  helloasync: tk.call(User, async (args) => tkok(`Hello ${args.username} async!`)),
+  hello: tk.call((args) => tkok(`Hello ${args.username}!`), User),
+  hellovoid: tk.call(() => tkok(`Hello void!`)),
+  helloasync: tk.call(async (args) => tkok(`Hello ${args.username} async!`), User),
   hellostream: tk.stream(User, (args) => {
     send(5)
     return tkok({ topic: "testtopic", initValue: { nested: "initVal", nr: 6 } })
   }),
   helloinstance: tk.instance(instanceRouter, (args, ctx) => ({ fetch: (req: Request) => instanceRouter.route({ req }) }), User),
   nested: {
-    hello: tk.call(User, (args) => tkok(`Hello ${args.username}! nested`))
+    hello: tk.call((args) => tkok(`Hello ${args.username}! nested`), User)
   }
 });
 
 let tkrp = tk.router({
-  helloprefix: tk.call(User, (args) => tkok(`Hello ${args.username}! prefixed`)),
+  helloprefix: tk.call((args) => tkok(`Hello ${args.username}! prefixed`), User),
 }, '/api')
 
 const server = http.createServer(
@@ -108,6 +109,14 @@ tktest('simple call', async () => {
     .call({ username: "TK" });
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello TK!")
+});
+
+tktest('vpod call', async () => {
+  let res = await client.e()
+    .hellovoid
+    .call();
+  let r = res.ok ? res.data : res.error
+  assert.is(r, "Hello void!")
 });
 
 tktest('simple call async', async () => {

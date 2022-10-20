@@ -7,6 +7,7 @@ import {
   Topics,
 } from "./events";
 
+type MaybeNoArgs<Args, Ctx, R> = Args extends undefined ? (ctx: Ctx) => MaybeAsync<R> : (args: Args, ctx: Ctx) => MaybeAsync<R>
 type Sameish<T, U> = [T] extends [U] ? ([U] extends [T] ? T : U extends unknown ? T : never) : T extends unknown ? U : never;
 export type MaybeAsync<T> = T | PromiseLike<T>
 
@@ -14,7 +15,9 @@ export interface Parsable {
   parse(obj: unknown): any
 }
 
-type ParseType<T> = T extends Parsable ? ReturnType<T['parse']> : never;
+const UndefinedParsable = undefined as unknown as { parse(obj: unknown): undefined}
+
+type ParseType<T> = T extends Parsable ? ReturnType<T['parse']> : undefined;
 
 function parseArgs<T extends Parsable>(args: unknown, schema: T): { ok: true, data: ParseType<T> } | { ok: false, error: Response } {
   let data;
@@ -72,7 +75,7 @@ export type Call<
   _type: "call";
   _schema?: SchemaType;
   _middlewares: MiddleWare[];
-  call: (args: In, ctx: Ctx) => MaybeAsync<TKResult<Out>>;
+  call: MaybeNoArgs<In, Ctx, TKResult<Out>>
 };
 
 export type Stream<
@@ -151,9 +154,9 @@ export class TKBuilder<
       instance: async (args: ParseType<SchemaType>, ctx: Ctx) => f(args, ctx),
     };
   }
-  call<SchemaType extends Parsable, Out>(
-    schema: SchemaType,
-    f: (args: ParseType<SchemaType>, ctx: Ctx) => MaybeAsync<TKResult<Out>>,
+  call<Out, SchemaType extends Parsable | undefined = undefined>(
+    f: MaybeNoArgs<ParseType<SchemaType>, Ctx, TKResult<Out>>,
+    schema?: SchemaType,
     middlewares: MiddleWare<Ctx>[] = []
   ): Call<Parsable, ParseType<SchemaType>, Out, Ctx> {
     return {
@@ -220,9 +223,14 @@ export class TKBuilder<
         switch (obj._type) {
           case "call": {
             const payload = ctx.__tk_internals.tkreq.args.shift();
-            const parsed = parseArgs(payload, obj._schema)
-            if (!parsed.ok) return parsed.error
-            const result = await obj.call(parsed.data, ctx);
+            let result: TKResult<any>
+            if (obj._schema !== undefined) {
+              const parsed = parseArgs(payload, obj._schema)
+              if (!parsed.ok) return parsed.error
+              result = await obj.call(parsed.data, ctx);
+            } else {
+              result = await obj.call(ctx, undefined);
+            }
             if (!result.ok) {
               const status = result.status ? result.status : 400;
               return new Response(result.error, { status });
