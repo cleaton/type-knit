@@ -9,6 +9,9 @@ Typesafe APIs over Fetch & Streams API standard.
 * Ergonomic, Fast, Flexible
 * Designed to be used with edge providers such as Cloudflare Workers & Durable Objects
 
+
+## Example
+--------------------Durable Object--------------------
 ```ts
 import { TKBuilder, tkok } from "type-knit";
 import { z } from "zod";
