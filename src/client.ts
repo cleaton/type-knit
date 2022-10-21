@@ -157,14 +157,14 @@ type TKFetchOptions = Record<string, any> & {
 export type FetchImpl = {
   Request: typeof Request;
   Response: typeof Response;
-  fetch: typeof fetch;
+  fetch: typeof fetch | ((req: Request) => Promise<Response>);
 };
 
 export function createClient<T>(
   url: string,
   options?: TKFetchOptions,
   fetchImpl?: FetchImpl
-): { e: () => T } {
+) {
   const impl: FetchImpl = fetchImpl
     ? fetchImpl
     : {
@@ -189,7 +189,7 @@ export function createClient<T>(
   u.pathname = u.pathname.endsWith('/') ? u.pathname : u.pathname + '/'
 
   return {
-    e: (override?: TKFetchOptions): T => {
+    e: (override?: TKFetchOptions, fetchImpl?: FetchImpl): T => {
       override = override ? override : {};
       const overrideHeaders: Record<string, string> = override?.headers
         ? override.headers
@@ -208,7 +208,7 @@ export function createClient<T>(
       const target: TKProxyTarget = {
         url: u,
         options,
-        impl,
+        impl: fetchImpl || impl,
         execArgs: [],
       };
       return new Proxy(target, proxyHandler);

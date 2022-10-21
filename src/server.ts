@@ -182,7 +182,7 @@ export class TKBuilder<
     routes: R,
     prefix: string = "/",
     middlewares: MiddleWare<Ctx>[] = [],
-  ): Router<Ctx> & R & {tkclient: ToBase<R>} {
+  ): Router<Ctx> & R & {tkclient: (ctx: Omit<Ctx, 'req'>) => ToBase<R>} {
     prefix = prefix.endsWith('/') ? prefix : prefix + '/'
     const route = async (ctx: Ctx & MaybeTKInternals) => {
       for (const m of middlewares) {
@@ -297,12 +297,20 @@ export class TKBuilder<
       }
       return new Response("route not found", { status: 404 });
     }
+    const cli = createClient<ToBase<R>>("http://localhost" + prefix)
+    const tkclient = (ctx: Omit<Ctx, 'req'>) => {
+      return cli.e(undefined, {
+        Request: Request,
+        Response: Response,
+        fetch: (req: Request) => route({...ctx, req} as Ctx)
+      })
+    }
     return {
       ...routes,
       _middlewares: middlewares,
       _type: "router",
       route,
-      tkclient: createClient<ToBase<R>>("http://localhost" + prefix, {fetch: route}).e()
+      tkclient: tkclient
     };
   }
 }

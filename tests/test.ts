@@ -111,6 +111,14 @@ tktest('simple call', async () => {
   assert.is(r, "Hello TK!")
 });
 
+tktest('router client simple call', async () => {
+  const res = await tkr.tkclient({})
+    .hello
+    .call({ username: "TK" });
+  let r = res.ok ? res.data : res.error
+  assert.is(r, "Hello TK!")
+});
+
 tktest('vpod call', async () => {
   let res = await client.e()
     .hellovoid
