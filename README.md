@@ -8,55 +8,86 @@ Typesafe APIs over Fetch & Streams API standard.
   * Single package including client, server, streaming & type definitions ~600 lines
 * Ergonomic, Fast, Flexible
 * Designed to be used with edge providers such as Cloudflare Workers & Durable Objects
+
 ```ts
 import { TKBuilder, tkok } from "type-knit";
 import { z } from "zod";
-const User = z.object({
-    id: z.string()
-    name: z.string()
-})
 
+// Types used for input validation
+const Change = z.number()
 const UsersInstance = z.object({
-  instance: z.string()
+  username: z.string()
 });
 
+// API builder
 const tk = new TKBuilder<{req: Request, env: Env, self: DurableUsers }>();
-const api = tk.router({
-    create: tk.call(User, async (user, ctx) => {
-        await ctx.self.storage.put(user.id, user)
-        return tkok(true)
-    }
-}
+
+// DO instance selection
 export const usersInstance = tk.instance(api, (args, ctx) => {
-  const id = ctx.env.USERS_CLASS.idFromName(args.instance)
-  return ctx.env.USERS_CLASS.get(id)
+  const id = ctx.env.COUNTER_CLASS.idFromName(args.instance)
+  return ctx.env.COUNTER_CLASS.get(id)
 })
 
-class DurableUsers implements DurableObject {
-    public readonly storage: DurableObjectStorage
-    constructor(state: DurableObjectState, private env: Env) {
+// DO API
+const api = tk.router({
+    add: tk.call(Change, async (change, ctx) => ctx.self.add(change))
+}
+
+// DO setup
+class DurableCounter implements DurableObject {
+    private readonly storage: DurableObjectStorage
+    private counter;
+    constructor(private state: DurableObjectState, private env: Env) {
         this.storage = state.storage
+        state.block.blockConcurrencyWhile(async () => {
+            counter = (await this.storage.get("counter")) || 0
+    }
+    add(val: number) {
+        this.counter = this.counter + val
+        this.storage.put("counter", this.counter)
+        tkok(this.counter)
     }
     fetch(req: Request): Promise<Response> {
         return api.route({ req, env: this.env, self: this });
     }
 }
-//--------------------Worker--------------------
+```
+--------------------Worker--------------------
+```ts
 import { TKBuilder, tkok } from "type-knit";
 import { z } from "zod";
 import { usersInstance } from './durableUsers'
+
+// Types used for input validation
 const Name = z.string()
+// API builder
 const tk = new TKBuilder<{req: Request, env: Env }>();
+
+// Worker API, which contains DO API as a subset via 
 const api = tk.router({
-    users: usersInstance,
+    counter: usersInstance,
     hello: tk.call(Name, (name, ctx) => tkok(`hello ${name}`))
 }
+// Export router type for client to import
+export type MyAPI = ToClient<typeof api>;
 
 export default {
     async fetch(req: Request, env: Env): Promise<Response> {
         return api.route({req, env})
     }
 }
+```
+--------------------Client--------------------
+```ts
+import type MyAPI from './worker'
+
+let client = createClient<MyServer>("http://127.0.0.1:3000");
+let count = await client.e()
+    .counter
+    .instance({ username: "myuser" })
+    .add
+    .call(5);
+// count = {ok: true, data: 5}
 ```
 
 Currently see `tests/` for more general examples
