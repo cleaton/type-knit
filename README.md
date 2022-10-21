@@ -1,6 +1,6 @@
 # Type-Knit (TK)
 
-Typesafe APIs over Fetch & Streams API standard.
+Typesafe APIs over Fetch & Streams API standard. (WinterCG standards, https://wintercg.org/)
 
 *Status*: **Alpha** - Feedback and suggestions welcome. Is this something you are interested in as well? Join the development!
 
