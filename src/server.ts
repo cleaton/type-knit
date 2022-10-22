@@ -15,7 +15,7 @@ export interface Parsable {
   parse(obj: unknown): any
 }
 
-const UndefinedParsable = undefined as unknown as { parse(obj: unknown): undefined}
+const UndefinedParsable = undefined as unknown as { parse(obj: unknown): undefined }
 
 type ParseType<T> = T extends Parsable ? ReturnType<T['parse']> : undefined;
 
@@ -47,8 +47,8 @@ export type TKStreamResult<V, T extends Topics, Ts extends keyof T> =
   | TKERR;
 
 export function tkstream<T>
-    (topic: string, initValue?: T) { 
-  return tkok({topic, initValue })
+  (topic: string, initValue?: T) {
+  return tkok({ topic, initValue })
 }
 
 export type Instance<
@@ -60,10 +60,7 @@ export type Instance<
   _type: "instance";
   _schema?: SchemaType;
   _middlewares: MiddleWare[];
-  instance: (
-    args: In,
-    ctx: Ctx
-  ) => Promise<{ fetch: (req: Request) => Promise<Response> }>;
+  instance: MaybeNoArgs<In, Ctx, { fetch: (req: Request) => Promise<Response> }>
 };
 
 export type Call<
@@ -126,6 +123,11 @@ interface Fetch {
   fetch: (req: Request) => Promise<Response>
 }
 
+function errtoresp(tkerr: TKERR) {
+  const status = tkerr.status ? tkerr.status : 400;
+  return new Response(tkerr.error, { status });
+}
+
 // Build API
 export class TKBuilder<
   Ctx extends TKServerContext,
@@ -138,12 +140,9 @@ export class TKBuilder<
   emit<Ts extends keyof T>(topic: Ts, event: StreamEvent<T[Ts]>): void {
     this.emitter.emit(topic, event)
   }
-  instance<R extends Router = any, SchemaType extends Parsable = any>(
+  instance<R extends Router = any, SchemaType extends Parsable | undefined = undefined>(
     router: R,
-    f: (
-      args: ParseType<SchemaType>,
-      ctx: Ctx
-    ) => MaybeAsync<Fetch>,
+    f: MaybeNoArgs<ParseType<SchemaType>, Ctx, Fetch>,
     schema?: SchemaType,
     middlewares: MiddleWare<Ctx>[] = []
   ): Instance<R, Parsable, ParseType<SchemaType>, Ctx> {
@@ -151,7 +150,7 @@ export class TKBuilder<
       _type: "instance",
       _schema: schema,
       _middlewares: middlewares,
-      instance: async (args: ParseType<SchemaType>, ctx: Ctx) => f(args, ctx),
+      instance: f,
     };
   }
   call<Out, SchemaType extends Parsable | undefined = undefined>(
@@ -182,7 +181,7 @@ export class TKBuilder<
     routes: R,
     prefix: string = "/",
     middlewares: MiddleWare<Ctx>[] = [],
-  ): Router<Ctx> & R & {tkclient: (ctx: Omit<Ctx, 'req'>) => ToBase<R>} {
+  ): Router<Ctx> & R & { tkclient: (ctx: Omit<Ctx, 'req'>) => ToBase<R> } {
     prefix = prefix.endsWith('/') ? prefix : prefix + '/'
     const route = async (ctx: Ctx & MaybeTKInternals) => {
       for (const m of middlewares) {
@@ -222,9 +221,9 @@ export class TKBuilder<
         const obj = r[path];
         switch (obj._type) {
           case "call": {
-            const payload = ctx.__tk_internals.tkreq.args.shift();
             let result: TKResult<any>
             if (obj._schema !== undefined) {
+              const payload = ctx.__tk_internals.tkreq.args.shift();
               const parsed = parseArgs(payload, obj._schema)
               if (!parsed.ok) return parsed.error
               result = await obj.call(parsed.data, ctx);
@@ -258,7 +257,7 @@ export class TKBuilder<
             if (result.data.initValue !== undefined) {
               publish({ type: "data", data: result.data.initValue })
             } else {
-              publish({type: "ping"})
+              publish({ type: "ping" })
             }
             return new Response(es.readable, {
               status: 200,
@@ -270,21 +269,26 @@ export class TKBuilder<
             });
           }
           case "instance": {
-            const payload = ctx.__tk_internals.tkreq.args.shift();
-            const parsed = parseArgs(payload, obj._schema)
-            if (!parsed.ok) return parsed.error
-            const fetchImpl = await obj.instance(parsed.data, ctx);
+            let fetchImpl: Fetch
+            if (obj._schema !== undefined) {
+              const payload = ctx.__tk_internals.tkreq.args.shift();
+              const parsed = parseArgs(payload, obj._schema)
+              if (!parsed.ok) return parsed.error
+              fetchImpl = await obj.instance(parsed.data, ctx);
+            } else {
+              fetchImpl = await obj.instance(ctx, undefined);
+            }
             let url = new URL(ctx.req.url);
             ctx.__tk_internals.paths.shift();
             const body = JSON.stringify(ctx.__tk_internals.tkreq)
             url.pathname = ctx.__tk_internals.paths.join('/')
             const headers = new Headers()
             for (const [header, value] of (ctx.req.headers as any).entries()) {
-              if(header !== 'content-length') {
+              if (header !== 'content-length') {
                 headers.append(header, value)
               }
             }
-            return fetchImpl.fetch(new Request(url, { headers, method: 'POST', body  }));
+            return fetchImpl.fetch(new Request(url, { headers, method: 'POST', body }));
           }
           case "router": {
             return obj.route(ctx);
@@ -302,7 +306,7 @@ export class TKBuilder<
       return cli.e(undefined, {
         Request: Request,
         Response: Response,
-        fetch: (req: Request) => route({...ctx, req} as Ctx)
+        fetch: (req: Request) => route({ ...ctx, req } as Ctx)
       })
     }
     return {

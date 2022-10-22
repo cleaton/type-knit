@@ -48,6 +48,7 @@ let tkr = tk.router({
     return tkok({ topic: "testtopic", initValue: { nested: "initVal", nr: 6 } })
   }),
   helloinstance: tk.instance(instanceRouter, (args, ctx) => ({ fetch: (req: Request) => instanceRouter.route({ req }) }), User),
+  instancenoargs: tk.instance(instanceRouter, (ctx) => ({ fetch: (req: Request) => instanceRouter.route({ req }) })),
   nested: {
     hello: tk.call((args) => tkok(`Hello ${args.username}! nested`), User)
   }
@@ -144,6 +145,17 @@ tktest('simple instance call', async () => {
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello TK! from instance")
 });
+
+tktest('simple instance call no args', async () => {
+  let res = await client.e()
+    .instancenoargs
+    .instance()
+    .hello
+    .call({ username: "TK" });
+  let r = res.ok ? res.data : res.error
+  assert.is(r, "Hello TK! from instance")
+});
+
 tktest('arbitrary topic stream', async () => {
   await new Promise(resolve => {
     const r = arbitraryclient.e()

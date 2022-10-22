@@ -4,7 +4,7 @@ function exec<T>(target: TKProxyTarget, executeRequest: (req: Request) => T) {
   return (args: unknown) => {
     const url = new URL(target.url);
     url.pathname = url.pathname + target.execPath;
-    target.execArgs.push(args);
+    if (args !== undefined) target.execArgs.push(args);
     let r = new target.impl.Request(url, {
       ...target.options,
       body: JSON.stringify({ args: target.execArgs }),
@@ -25,41 +25,41 @@ class EventStreamImpl<T> implements EventStream<T> {
     cb({ state: 'connecting' })
     let resp = await this.impl.fetch(this.req)
     if (resp.ok) {
-    cb({ state: 'connected' })
-    const body = resp.body
-    let lastData: T | undefined
-    if (body) {
-      this.reader = body.pipeThrough(new TextDecoderStream()).getReader()
-      let buffer = '';
-      let endOfStream = false
-      while (!this.cancelled) {
-        let { done, value } = await this.reader.read()
-        if (done) {
-          endOfStream = true
-          break;
-        } 
-        if (value) {
-          buffer += value
-          let split = buffer.indexOf("\n")
-          while (split >= 0) {
-            let b = buffer.slice(0, split)
-            if (b !== "") { // empty newline === Ping
-              const data = JSON.parse(buffer)
-              cb({ state: "data", data })
+      cb({ state: 'connected' })
+      const body = resp.body
+      let lastData: T | undefined
+      if (body) {
+        this.reader = body.pipeThrough(new TextDecoderStream()).getReader()
+        let buffer = '';
+        let endOfStream = false
+        while (!this.cancelled) {
+          let { done, value } = await this.reader.read()
+          if (done) {
+            endOfStream = true
+            break;
+          }
+          if (value) {
+            buffer += value
+            let split = buffer.indexOf("\n")
+            while (split >= 0) {
+              let b = buffer.slice(0, split)
+              if (b !== "") { // empty newline === Ping
+                const data = JSON.parse(buffer)
+                cb({ state: "data", data })
+              }
+              buffer = buffer.slice(split + 1)
+              split = buffer.indexOf("\n")
             }
-            buffer = buffer.slice(split + 1)
-            split = buffer.indexOf("\n")
           }
         }
+        if (endOfStream) {
+          cb({ state: "done", lastData })
+        }
       }
-      if (endOfStream) {
-        cb({ state: "done", lastData })
-      }
+    } else {
+      //TODO: better error handling
+      console.log(await resp.body)
     }
-  } else {
-    //TODO: better error handling
-    console.log(await resp.body)
-  }
   }
 }
 
@@ -84,7 +84,7 @@ const proxyHandler: ProxyHandler<any> = {
         return exec(target, (req) => new EventStreamImpl(target.impl, req));
       case "instance":
         return (args: unknown) => {
-          target.execArgs.push(args);
+          if (args !== undefined) target.execArgs.push(args);
           return new Proxy(target, proxyHandler);
         };
       default:
@@ -178,14 +178,14 @@ export function createClient<T>(
   const baseHeaders: Record<string, string> = options?.headers
     ? options.headers
     : {};
-  
+
   let u: URL
   try {
     u = new URL(url);
   } catch (error) {
     u = new URL(url, origin)
   }
-  
+
   u.pathname = u.pathname.endsWith('/') ? u.pathname : u.pathname + '/'
 
   return {
