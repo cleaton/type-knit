@@ -60,7 +60,7 @@ export type Instance<
   _type: "instance";
   _schema?: SchemaType;
   _middlewares: MiddleWare[];
-  instance: MaybeNoArgs<In, Ctx, { fetch: (req: Request) => Promise<Response> }>
+  instance: MaybeNoArgs<In, Ctx, TKResult<{ fetch: (req: Request) => Promise<Response> }>>
 };
 
 export type Call<
@@ -142,7 +142,7 @@ export class TKBuilder<
   }
   instance<R extends Router = any, SchemaType extends Parsable | undefined = undefined>(
     router: R,
-    f: MaybeNoArgs<ParseType<SchemaType>, Ctx, Fetch>,
+    f: MaybeNoArgs<ParseType<SchemaType>, Ctx, TKResult<Fetch>>,
     schema?: SchemaType,
     middlewares: MiddleWare<Ctx>[] = []
   ): Instance<R, Parsable, ParseType<SchemaType>, Ctx> {
@@ -230,10 +230,7 @@ export class TKBuilder<
             } else {
               result = await obj.call(ctx, undefined);
             }
-            if (!result.ok) {
-              const status = result.status ? result.status : 400;
-              return new Response(result.error, { status });
-            }
+            if (!result.ok) return errtoresp(result)
             return new Response(JSON.stringify(result.data), {
               status: 200,
             });
@@ -269,7 +266,7 @@ export class TKBuilder<
             });
           }
           case "instance": {
-            let fetchImpl: Fetch
+            let fetchImpl: TKResult<Fetch>
             if (obj._schema !== undefined) {
               const payload = ctx.__tk_internals.tkreq.args.shift();
               const parsed = parseArgs(payload, obj._schema)
@@ -278,6 +275,7 @@ export class TKBuilder<
             } else {
               fetchImpl = await obj.instance(ctx, undefined);
             }
+            if (!fetchImpl.ok) return errtoresp(fetchImpl)
             let url = new URL(ctx.req.url);
             ctx.__tk_internals.paths.shift();
             const body = JSON.stringify(ctx.__tk_internals.tkreq)
@@ -288,7 +286,7 @@ export class TKBuilder<
                 headers.append(header, value)
               }
             }
-            return fetchImpl.fetch(new Request(url, { headers, method: 'POST', body }));
+            return fetchImpl.data.fetch(new Request(url, { headers, method: 'POST', body }));
           }
           case "router": {
             return obj.route(ctx);

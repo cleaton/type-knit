@@ -47,8 +47,8 @@ let tkr = tk.router({
     send(5)
     return tkok({ topic: "testtopic", initValue: { nested: "initVal", nr: 6 } })
   }),
-  helloinstance: tk.instance(instanceRouter, (args, ctx) => ({ fetch: (req: Request) => instanceRouter.route({ req }) }), User),
-  instancenoargs: tk.instance(instanceRouter, (ctx) => ({ fetch: (req: Request) => instanceRouter.route({ req }) })),
+  helloinstance: tk.instance(instanceRouter, (args, ctx) => (tkok({ fetch: (req: Request) => instanceRouter.route({ req }) })), User),
+  instancenoargs: tk.instance(instanceRouter, (ctx) => (tkok({ fetch: (req: Request) => instanceRouter.route({ req }) }))),
   nested: {
     hello: tk.call((args) => tkok(`Hello ${args.username}! nested`), User)
   }
