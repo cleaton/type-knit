@@ -6,10 +6,10 @@ import {
   StreamEvent,
   Topics,
 } from "./events";
+import type { MaybeAsync } from './utils'
 
 type MaybeNoArgs<Args, Ctx, R> = Args extends undefined ? (ctx: Ctx) => MaybeAsync<R> : (args: Args, ctx: Ctx) => MaybeAsync<R>
 type Sameish<T, U> = [T] extends [U] ? ([U] extends [T] ? T : U extends unknown ? T : never) : T extends unknown ? U : never;
-export type MaybeAsync<T> = T | PromiseLike<T>
 
 export interface Parsable {
   parse(obj: unknown): any
