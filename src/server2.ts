@@ -1,99 +1,104 @@
 import type { VType } from './tkresult'
-import { TKResult } from './tkresult'
+import { TKResult, tkok, tkerr } from './tkresult'
 import type { MaybeAsync } from './utils'
+import {
+    Emitter,
+    EventEmitter,
+    eventStream,
+    StreamEvent,
+    Topics,
+  } from "./events";
 
-type StreamResult<T> = {topic: string, initValue?: T}
-type Call<T, R, Ctx> = (c: Ctx, args: T) => MaybeAsync<VType<R>>
-type Post<T, R, Ctx> = {post: (c: Ctx, args: T) => TKResult<R>}
-type Get<T, R, Ctx> = {get: (c: Ctx, args: T) => TKResult<R>}
-type Delete<T, R, Ctx> = {delete: (c: Ctx, args: T) => TKResult<R>}
-type Put<T, R, Ctx> = {put: (c: Ctx, args: T) => TKResult<R>}
-type Stream<T, R, Ctx> = {stream: (c: Ctx, args: T) => TKResult<StreamResult<R>>}
-type Handlers<T, R, Ctx> = Post<T, R, Ctx> | Get<T, R, Ctx> | Delete<T, R, Ctx> | Put<T, R, Ctx> | Stream<T, R, Ctx>
-type Routes = {
-    [key: string]: Handlers<any, any, any>
+type Sameish<T, U> = [T] extends [U] ? ([U] extends [T] ? T : U extends unknown ? T : never) : T extends unknown ? U : never;
+type StreamResult<R, To extends Topics, Ts extends keyof To> = { topic: Ts, initValue?: Sameish<R, To[Ts]> }
+type Methods = 'get' | 'put' | 'post' | 'delete'
+type MethodHandler<Ctx, T, R> = (c: Ctx, args: T) => MaybeAsync<TKResult<R>>
+type MethodHandlers<Ctx, To extends Topics, Ts extends keyof To> = { 
+    [k in Methods]?: MethodHandler<Ctx, any, any>
+} & {
+    stream?: (c: Ctx, args: any) => MaybeAsync<TKResult<StreamResult<any, To, Ts>>>
 }
 
-class TKBuilder<Ctx = any, M extends Routes = {}> {
-    private _paths: M
-    constructor(paths?: M) {
-        this._paths = paths ?? {} as M
-    }
-    // TODO reduce repetition
-    post<P extends string, T, R>(path: P, call: Call<T, R, Ctx>) {
-        const existing: Record<string, any> = this._paths[path] ?? {}
-        existing['post'] = (c: Ctx, args: T) => TKResult.fromValue<R>(call(c, args))
-        this._paths[path] = existing as M[P]
-        return new TKBuilder<Ctx, {[k in Exclude<keyof M, P>]: M[k]} & { [k in P]: M[k] & Post<T, R, Ctx> }>()
-    }
-    get<P extends string, T, R>(path: P, call: Call<T, R, Ctx>) {
-        const existing: Record<string, any> = this._paths[path] ?? {}
-        existing['get'] = (c: Ctx, args: T) => TKResult.fromValue<R>(call(c, args))
-        this._paths[path] = existing as M[P]
-        return new TKBuilder<Ctx, {[k in Exclude<keyof M, P>]: M[k]} & { [k in P]: M[k] & Get<T, R, Ctx> }>()
-    }
-    put<P extends string, T, R>(path: P, call: Call<T, R, Ctx>) {
-        const existing: Record<string, any> = this._paths[path] ?? {}
-        existing['put'] = (c: Ctx, args: T) => TKResult.fromValue<R>(call(c, args))
-        this._paths[path] = existing as M[P]
-        return new TKBuilder<Ctx, {[k in Exclude<keyof M, P>]: M[k]} & { [k in P]: M[k] & Put<T, R, Ctx> }>()
-    }
-    delete<P extends string, T, R>(path: P, call: Call<T, R, Ctx>) {
-        const existing: Record<string, any> = this._paths[path] ?? {}
-        existing['delete'] = (c: Ctx, args: T) => TKResult.fromValue<R>(call(c, args))
-        this._paths[path] = existing as M[P]
-        return new TKBuilder<Ctx, {[k in Exclude<keyof M, P>]: M[k]} & { [k in P]: M[k] & Delete<T, R, Ctx> }>()
-    }
-    stream<P extends string, T, R>(path: P) {
+type Routes = {
+    [key: string]: MethodHandlers<any, any, any>
+}
 
+export type Parsable<T> = {
+    parse(obj: unknown): T
+}
+
+function validate<T>(p: Parsable<T>, obj: unknown): TKResult<T> {
+    try {
+        return tkok(p.parse(obj))
+    } catch (error) {
+        return tkerr(JSON.stringify(error), 400)
     }
-    build2(fetch: (req: Request) => Response) {
-        const resp = {} as any
-        for (const p in this._paths) {
-            const respm = {} as any
-            const methods = this._paths[p]
-            for(const m in methods) {
-                switch (m) {
-                    case 'post':
-                        respm[m] = (c: Ctx, args: any) => TKResult.fromResponse(fetch(new Request('' + p , {method: 'post', body: JSON.stringify(args)})))
-                        break;
-                }
-            }
-            resp[p] = respm
+}
+
+//type MergeArgs<T, ET> = T extends Routes
+//    ? {
+//        [k in keyof T]: MergeArgs<T[k], ET>
+//      }
+//    : UpdateGet<T, ET> & UpdatePost<T, ET>
+//
+class TKBuilder<Ctx, To extends Topics = Record<string, any>> {
+    private readonly emitter: Emitter<To>;
+    constructor(emitter?: Emitter<To>) {
+      this.emitter = emitter || new EventEmitter<To>();
+    }
+    emit<Ts extends keyof To>(topic: Ts, event: StreamEvent<To[Ts]>): void {
+      this.emitter.emit(topic, event)
+    }
+    m<T, R>(h: MethodHandler<Ctx, T, R>, v?: Parsable<T>) {
+        return (c: Ctx, args: T) => {
+            v = v ?? {parse: (obj) => (obj as T)}
+            return validate(v, args).map(t => h(c, t))
         }
-        return this._paths
     }
-    build() {
-        return this._paths
+    remote<P extends string, T, R extends Routes>(path: P, routes: R, prepare: (ctx: Ctx, args: T) => (req: Request) => Response) {
+        //@ts-ignore
+        this._paths[path] = {type: 'instance', f: prepare}
+        //@ts-ignore
+        return new TKBuilder<Ctx, M & { [k in P]: MergeArgs<R, T>}>()
+    }
+    routes<R extends Routes>(r: R) {
+        return r
     }
 }
 
 // TESTS
-const tk = new TKBuilder();
+const tk = new TKBuilder<{}, {"testtopic": string}>();
 
-const routes = tk.post("test", (c, t: {name: number}) => ({ok: true, data: {test: "test"}}))
-                 .post("test2", (c, t: {name: number}) => ({ok: true, data: {test: "test"}}))
-                 .get("test", (c, t: {name: number}) => ({ok: true, data: {t: "test"}}))
-                 .get("test", (c, t: {name: number}) => ({ok: true, data: {tet: "te"}}))
-                 .build()
-
-const r2 = await routes.test.get({}, {name: 123}).value()
-
-const r = await routes.test.post({}, {name: 123}).value()
-if (r.ok) {
-    r.data
-}
-
-type ToClient<T> = T extends Routes
-    ? {
-        [K in keyof T]: ToClient<T[K]>
+const routes = tk.routes({
+    "test": {
+        post: tk.m((c, t: {name: number}) => tkok({test: "test"})),
+        stream: (c, t) => tkok({topic: "testtopic", initValue: "hi"})
     }
-    : T extends Post<infer I, infer R, any>
-    ? { post: (args: I) => MaybeAsync<TKResult<R>> }
-    : never;
+})
 
-const cli = {} as ToClient<typeof routes>
+routes.test.stream()
 
-cli.test.post({name: 123})
+async function RequestExecutor<R extends Routes>(req: Request, r: R): Promise<Response> {
+    const url = new URL(req.url)
+    const method = req.method as Methods
+    const handlers = r[url.pathname] ?? {}
+    const h = handlers[method]
+    switch (method) {
+        case 'post':
+        case 'put':
+            if (h) {
+                const args = await req.json() as unknown
+                return (await h({}, args)).response()
+            }
+        case 'get':
+        case 'delete': 
+            if (h) {
+                const args = JSON.parse(decodeURIComponent(url.searchParams.get("args") ?? "")) as unknown
+                return (await h({}, args)).response()
+            }
+        default:
+            return new Response('', {status: 404})
+    }
+}
 
 export {}

@@ -1,7 +1,10 @@
 import type { MaybeAsync } from './utils'
 
-
-export type VType<T> = { ok: true, data: T } | { ok: false, error: string, status?: number }
+export function tkok<T>(data: T) : TKResult<T> { return TKResult.fromValue({ok: true, data}) }
+export function tkerr(msg: string, status?: number): TKResult<any> { return TKResult.fromValue({ok: false, error: msg, status}) }
+export type VOK<T> = { ok: true, data: T }
+export type VERR = { ok: false, error: string, status?: number }
+export type VType<T> =  VOK<T> | VERR
 export class TKResult<T> {
     private self!: { type: 'response'; v: Response; } | { type: 'value'; v: MaybeAsync<VType<T>>; };
     private constructor() { }
@@ -16,10 +19,10 @@ export class TKResult<T> {
         return t
     }
 
-    map<R>(f: (arg: MaybeAsync<T>) => MaybeAsync<VType<R>>) {
+    map<R>(f: (arg: T) => MaybeAsync<TKResult<R>>) {
         const r = new TKResult<R>()
         const nextValue: MaybeAsync<VType<R>> = this.value().then(async v => {
-            return v.ok ? await f(v.data) : v
+            return v.ok ? (await f(v.data)).value() : v
         })
         r.self = { type: 'value', v: nextValue }
         return r

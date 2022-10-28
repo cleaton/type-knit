@@ -1,4 +1,4 @@
-import { createClient, ToBase, ToClient } from "./client";
+import { createClient, ToBase } from "./client";
 import {
   Emitter,
   EventEmitter,
@@ -14,9 +14,6 @@ type Sameish<T, U> = [T] extends [U] ? ([U] extends [T] ? T : U extends unknown 
 export interface Parsable {
   parse(obj: unknown): any
 }
-
-const UndefinedParsable = undefined as unknown as { parse(obj: unknown): undefined }
-
 type ParseType<T> = T extends Parsable ? ReturnType<T['parse']> : undefined;
 
 function parseArgs<T extends Parsable>(args: unknown, schema: T): { ok: true, data: ParseType<T> } | { ok: false, error: Response } {
