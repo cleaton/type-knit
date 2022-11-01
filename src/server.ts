@@ -15,8 +15,6 @@ export interface Parsable {
   parse(obj: unknown): any
 }
 
-const UndefinedParsable = undefined as unknown as { parse(obj: unknown): undefined }
-
 type ParseType<T> = T extends Parsable ? ReturnType<T['parse']> : undefined;
 
 function parseArgs<T extends Parsable>(args: unknown, schema: T): { ok: true, data: ParseType<T> } | { ok: false, error: Response } {
@@ -35,16 +33,24 @@ export type TKServerContext = Omit<Record<string, any>, "req"> & {
 
 export type TKOK<T> = { ok: true, data: T }
 export type TKERR = { ok: false, error: string, status?: number }
-export function tkok<T>(data: T): TKOK<T> {
-  return { ok: true, data }
+export function tkok<T>(data: T): TKResult<T> {
+  return TKResult.OK(data)
 }
-export function tkerr(error: string, status?: number): TKERR { return { ok: false, error, status } }
+export function tkerr(error: string, status?: number): TKResult<any> { return TKResult.ERR(error, status) }
 
-export type TKResult<T> = TKOK<T> | TKERR
+//export type TKResult<T> = TKOK<T> | TKERR
+export class TKResult<T> {
+  private constructor(public readonly value: TKOK<T> | TKERR) {}
+  static OK<T>(data: T) { return new TKResult<T>({ok: true, data})}
+  static ERR<T>(error: string, status?: number) { return new TKResult<T>({ok: false, error, status})}
+  map<R>(f: (data: T) => TKResult<R>): TKResult<R> {
+    return this.value.ok ? f(this.value.data) : this as unknown as TKResult<R>
+  }
+  get(): [T, undefined] | [undefined, string] { return this.value.ok ? [this.value.data, undefined] : [undefined, this.value.error] }
+}
+
 export type StreamReturn<V, T extends Topics, Ts extends keyof T> = { topic: Ts, initValue?: Sameish<V, T[Ts]> }
-export type TKStreamResult<V, T extends Topics, Ts extends keyof T> =
-  | TKOK<StreamReturn<V, T, Ts>>
-  | TKERR;
+export type TKStreamResult<V, T extends Topics, Ts extends keyof T> = TKResult<StreamReturn<V, T, Ts>>
 
 export function tkstream<T>
   (topic: string, initValue?: T) {
@@ -230,8 +236,8 @@ export class TKBuilder<
             } else {
               result = await obj.call(ctx, undefined);
             }
-            if (!result.ok) return errtoresp(result)
-            return new Response(JSON.stringify(result.data), {
+            if (!result.value.ok) return errtoresp(result.value)
+            return new Response(JSON.stringify(result.value.data), {
               status: 200,
             });
           }
@@ -240,19 +246,19 @@ export class TKBuilder<
             const parsed = parseArgs(payload, obj._schema)
             if (!parsed.ok) return parsed.error
             const result = await obj.stream(parsed.data, ctx);
-            if (!result.ok) {
-              const status = result.status ? result.status : 400;
-              return new Response(result.error, { status });
+            if (!result.value.ok) {
+              const status = result.value.status ? result.value.status : 400;
+              return new Response(result.value.error, { status });
             }
             let publish: (event: StreamEvent<unknown>) => void;
             const unsub = this.emitter.subscribe(
-              result.data.topic,
+              result.value.data.topic,
               (event: StreamEvent<unknown>) => publish && publish(event)
             );
             const es = eventStream(() => unsub());
             publish = es.publish;
-            if (result.data.initValue !== undefined) {
-              publish({ type: "data", data: result.data.initValue })
+            if (result.value.data.initValue !== undefined) {
+              publish({ type: "data", data: result.value.data.initValue })
             } else {
               publish({ type: "ping" })
             }
@@ -275,7 +281,7 @@ export class TKBuilder<
             } else {
               fetchImpl = await obj.instance(ctx, undefined);
             }
-            if (!fetchImpl.ok) return errtoresp(fetchImpl)
+            if (!fetchImpl.value.ok) return errtoresp(fetchImpl.value)
             let url = new URL(ctx.req.url);
             ctx.__tk_internals.paths.shift();
             const body = JSON.stringify(ctx.__tk_internals.tkreq)
@@ -286,7 +292,7 @@ export class TKBuilder<
                 headers.append(header, value)
               }
             }
-            return fetchImpl.data.fetch(new Request(url, { headers, method: 'POST', body }));
+            return fetchImpl.value.data.fetch(new Request(url, { headers, method: 'POST', body }));
           }
           case "router": {
             return obj.route(ctx);

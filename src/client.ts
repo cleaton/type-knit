@@ -1,4 +1,4 @@
-import { Call, Instance, MaybeAsync, Router, Stream, StreamReturn, tkerr, TKInternalKeys, TKOK, tkok, TKStreamResult } from "./server";
+import { Call, Instance, MaybeAsync, Router, Stream, StreamReturn, tkerr, TKInternalKeys, TKOK, tkok, TKResult, TKStreamResult } from "./server";
 
 function exec<T>(target: TKProxyTarget, executeRequest: (req: Request) => T) {
   return (args: unknown) => {
@@ -117,7 +117,7 @@ type CallType<T> = T extends (args: infer A) => MaybeAsync<infer R>
   : never;
 
 type StreamType<T> = T extends (args: infer A) => MaybeAsync<infer R>
-  ? R extends TKOK<StreamReturn<infer V, any, any>>
+  ? R extends TKResult<StreamReturn<infer V, any, any>>
   ? (args: A) => EventStream<V>
   : never
   : never;

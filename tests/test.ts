@@ -90,7 +90,7 @@ tktest.before(async () => {
 tktest('handle prefix', async () => {
   let res = await prefixclient.e()
     .helloprefix
-    .call({ username: "TK" });
+    .call({ username: "TK" }).then(v => v.value);
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello TK! prefixed")
 });
@@ -99,7 +99,7 @@ tktest('handle nested', async () => {
   let res = await client.e()
     .nested
     .hello
-    .call({ username: "TK" });
+    .call({ username: "TK" }).then(v => v.value);
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello TK! nested")
 });
@@ -107,7 +107,7 @@ tktest('handle nested', async () => {
 tktest('simple call', async () => {
   let res = await client.e()
     .hello
-    .call({ username: "TK" });
+    .call({ username: "TK" }).then(v => v.value);
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello TK!")
 });
@@ -115,7 +115,7 @@ tktest('simple call', async () => {
 tktest('router client simple call', async () => {
   const res = await tkr.tkclient({})
     .hello
-    .call({ username: "TK" });
+    .call({ username: "TK" }).then(v => v.value);
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello TK!")
 });
@@ -123,7 +123,7 @@ tktest('router client simple call', async () => {
 tktest('vpod call', async () => {
   let res = await client.e()
     .hellovoid
-    .call();
+    .call().then(v => v.value);
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello void!")
 });
@@ -131,7 +131,7 @@ tktest('vpod call', async () => {
 tktest('simple call async', async () => {
   let res = await client.e()
     .helloasync
-    .call({ username: "TK" });
+    .call({ username: "TK" }).then(v => v.value);
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello TK async!")
 });
@@ -141,7 +141,7 @@ tktest('simple instance call', async () => {
     .helloinstance
     .instance({ username: "instance" })
     .hello
-    .call({ username: "TK" });
+    .call({ username: "TK" }).then(v => v.value);
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello TK! from instance")
 });
@@ -151,7 +151,7 @@ tktest('simple instance call no args', async () => {
     .instancenoargs
     .instance()
     .hello
-    .call({ username: "TK" });
+    .call({ username: "TK" }).then(v => v.value);
   let r = res.ok ? res.data : res.error
   assert.is(r, "Hello TK! from instance")
 });
