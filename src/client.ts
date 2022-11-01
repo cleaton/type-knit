@@ -1,5 +1,5 @@
-import { Call, Instance, MaybeAsync, Router, Stream, StreamReturn, tkerr, TKInternalKeys, TKOK, tkok, TKStreamResult } from "./server";
-
+import { Call, Instance, Router, Stream, StreamReturn, tkerr, TKInternalKeys, TKOK, tkok, TKStreamResult } from "./server";
+import type { MaybeAsync } from "./utils"
 function exec<T>(target: TKProxyTarget, executeRequest: (req: Request) => T) {
   return (args: unknown) => {
     const url = new URL(target.url);
