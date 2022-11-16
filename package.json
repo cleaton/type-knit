@@ -17,10 +17,10 @@
     "node": ">=18.8"
   },
   "devDependencies": {
-    "@types/node": "18.7.23",
-    "@whatwg-node/server": "0.4.5",
-    "typescript": "^4.8.3",
-    "uvu": "0.5.6",
+    "@types/node": "^18.8.0",
+    "@whatwg-node/server": "^0.4.16",
+    "typescript": "^4.9.0",
+    "uvu": "^0.5.6",
     "tsm": "2.2.2",
     "c8": "7.12.0",
     "zod": "^3.19.1"

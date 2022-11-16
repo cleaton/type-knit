@@ -1,18 +1,18 @@
-export declare type Topics = {
+export type Topics = {
     [event: string]: any;
 };
-export declare type Unsubscribe = () => void;
-export declare type StreamEventData<T> = {
+export type Unsubscribe = () => void;
+export type StreamEventData<T> = {
     type: "data";
     data: T;
 };
-export declare type StreamEventClose = {
+export type StreamEventClose = {
     type: "close";
 };
-export declare type StreamEventPing = {
+export type StreamEventPing = {
     type: "ping";
 };
-export declare type StreamEvent<T> = StreamEventData<T> | StreamEventClose | StreamEventPing;
+export type StreamEvent<T> = StreamEventData<T> | StreamEventClose | StreamEventPing;
 export interface Emitter<T extends Topics> {
     emit<Ts extends keyof T>(topic: Ts, event: StreamEvent<T[Ts]>): void;
     subscribe<Ts extends keyof T>(topic: Ts, onEvent: (event: StreamEvent<[Ts]>) => void): Unsubscribe;
