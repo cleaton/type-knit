@@ -211,6 +211,7 @@ export function createClient<T>(
         impl: fetchImpl || impl,
         execArgs: [],
       };
+      console.log('fetch implementation is', fetchImpl)
       return new Proxy(target, proxyHandler);
     },
   };

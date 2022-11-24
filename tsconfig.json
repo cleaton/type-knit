@@ -1,23 +1,9 @@
 {
     "compilerOptions": {
-        "forceConsistentCasingInFileNames": true,
-        "isolatedModules": true,
-        "moduleResolution": "node",
-        "preserveWatchOutput": true,
-        "esModuleInterop": true,
-        "noEmitOnError": true,
-        "strict": true,
-        "declaration": true,
-        "module": "ES2022",
-        "target": "ES2022",
-        "sourceMap": true,
-        "lib": ["ES2022", "DOM"],
-        "outDir": "dist",
-        "paths": {
-            "@src/*": ["./src/*"],
-            "@dist/*": ["./dist/*"],
-            "@tests/*": ["./tests/*"]
-        }
+      "target": "ES2020",
+      "module": "CommonJS",
+      "lib": ["ES2020"],
+      "types": ["@cloudflare/workers-types"]
       },
     "include": ["src/**/*"],
     "exclude": ["node_modules", "dist"],

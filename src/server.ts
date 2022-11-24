@@ -190,6 +190,7 @@ export class TKBuilder<
   ): Router<Ctx> & R & { tkclient: (ctx: Omit<Ctx, 'req'>) => ToBase<R> } {
     prefix = prefix.endsWith('/') ? prefix : prefix + '/'
     const route = async (ctx: Ctx & MaybeTKInternals) => {
+      console.log('routing: ',ctx.req.url)
       for (const m of middlewares) {
         let out = m.handle(ctx);
         if (out.type == "response") {
@@ -310,7 +311,10 @@ export class TKBuilder<
       return cli.e(undefined, {
         Request: Request,
         Response: Response,
-        fetch: (req: Request) => route({ ...ctx, req } as Ctx)
+        fetch: (req: Request) => {
+          console.log('tkclient url:', req.url)
+          return route({ ...ctx, req } as Ctx)
+        }
       })
     }
     return {
