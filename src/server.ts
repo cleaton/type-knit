@@ -307,10 +307,14 @@ export class TKBuilder<
     }
     const cli = createClient<ToBase<R>>("http://localhost" + prefix)
     const tkclient = (ctx: Omit<Ctx, 'req'>) => {
+      //@ts-ignore remove internals in case of reused ctx
+      ctx.__tk_internals = undefined;
       return cli.e(undefined, {
         Request: Request,
         Response: Response,
-        fetch: (req: Request) => route({ ...ctx, req } as Ctx)
+        fetch: (req: Request) => {
+          return route({ ...ctx, req } as Ctx)
+        }
       })
     }
     return {
