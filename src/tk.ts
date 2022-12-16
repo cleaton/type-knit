@@ -98,11 +98,17 @@ const TKERR = <T>(error: string, status?: number): Result<TKError<T>> => ({
 
 const TKSTREAM = <T extends TKStreamSubscribable<any>>(stream: T): Result<TKStream<T> | TKError<T>> => ({
     async response() {
-        return new Response(JSON.stringify(this.stream), {
+        stream.subscribe()
+        const ts = new TransformStream()
+        ts.writable.getWriter().write()
+        return new Response(es.readable, {
+            status: 200,
             headers: {
-                'Content-Type': 'text/event-stream',
+              "Content-Type": "text/event-stream",
+              Connection: "keep-alive",
+              "Cache-Control": "no-cache",
             },
-        })
+          })
     },
     async concrete() { return { ok: true, stream } }
 })
