@@ -2,8 +2,9 @@ type TKError<T> = { ok: false, error: string, status?: number }
 type TKData<T> = { ok: true, data: T }
 type TKStream<T> = { ok: true, stream: TKStreamSubscribable<T> }
 type TKStreamEvent<T> = { type: 'end' } | { type: 'error', error: string } | { type: 'data', data: T }
+type TKStreamEventCallback<T> = (event: TKStreamEvent<T>) => void | Promise<void>
 type TKStreamSubscribable<T> = {
-    subscribe(callback: (event: TKStreamEvent<T>) => void | Promise<void>): () => void
+    subscribe(callback: TKStreamEventCallback<T>): () => void
 }
 type Concrete<T> = TKData<T> | TKStream<T> | TKError<T>
 type ConcreteData<T> = TKData<T> | TKError<T>
@@ -11,6 +12,39 @@ type ConcreteStream<T> = TKStream<T> | TKError<T>
 interface Result<T extends Concrete<any>> {
     response(): Promise<Response>
     concrete(): Promise<T>
+}
+
+class TKSubscriptions {
+    private subscribers: Map<string, Map<string, TKStreamEventCallback<any>>>
+    constructor () {
+        this.subscribers = new Map()
+    }
+    subscriber<T>(topic: string, subid?: string): TKStreamSubscribable<T> {
+        let topicSubscribers = this.subscribers.get(topic)
+        if (!topicSubscribers) {
+            topicSubscribers = new Map()
+            this.subscribers.set(topic, topicSubscribers)
+        }
+        subid = subid ?? crypto.randomUUID()
+        return {
+            subscribe(calllback) {
+                topicSubscribers.set(subid, calllback)
+                return () => topicSubscribers.delete(subid)
+            }
+        }
+    }
+    publish(topic: string, data: TKStreamEvent<any>, subid?: string) {
+        const subscribers = this.subscribers.get(topic)
+        if (!subscribers) return
+        if (subid !== undefined) {
+            const subscriber = subscribers.get(subid)
+            if (subscriber) subscriber(data)
+            return
+        }
+        for (const [_subid, callback] of subscribers.entries()) {
+            callback(data)
+        }
+    }
 }
 
 class ResponseResult<T extends Concrete<any>> implements Result<T> {
@@ -141,13 +175,17 @@ const routes = tk.build({
             return TKOK(12345)
         }, () => ({ body: { test: "hi" } })),
         put: tk.handler(() => TKOK("Hello world"))
-    }
+    },
+    "/api/test2": {
+        put: tk.handler(() => TKOK("Hello world"))
+    },
 })
 
 
 
+type WithValidated<T> = T & Omit<Validated<any, Record<string, string>, Record<string, string>>, keyof T>
 type RemoveContext<T> = T extends (input: infer I, ...rest: any[]) => infer R ?
-    (input: Validated<any, Record<string, string>, Record<string, string>> & I) => R : never
+    (input: WithValidated<I>) => R : never
 type ToFunction<T> = T extends { handler: any } ? RemoveContext<T['handler']> : undefined
 type ExtractMethods<T extends Methods> = {
     [M in keyof T]: ToFunction<T[M]>
@@ -159,7 +197,6 @@ type ToClient<T extends Routes> = {
 const r = tk.route(new Request(""), { test: "hi" }, routes)
 
 const test = {} as ToClient<typeof routes>
-
 test["/api/test"].get({ body: { test: "hi" }, query: { test: "hi" } })
 
 
@@ -184,9 +221,8 @@ function createClient<T extends Record<string, any>>(): <P extends keyof T>(path
 }
 
 const client = createClient<ToClient<typeof routes>>()
-
-
-
+client("/api/test2").put({})
+client("/api/test").get({body: {test: "hello"}})
 client("/api/test").get({ body: { test: "hi" } }).concrete().then(r => r.ok === true ? r.data : r.error)
 
 export { }
