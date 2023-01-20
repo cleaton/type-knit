@@ -16,7 +16,7 @@ interface Result<T extends Concrete<any>> {
 
 class TKSubscriptions {
     private subscribers: Map<string, Map<string, TKStreamEventCallback<any>>>
-    constructor () {
+    constructor() {
         this.subscribers = new Map()
     }
     subscriber<T>(topic: string, subid?: string): TKStreamSubscribable<T> {
@@ -104,11 +104,11 @@ const TKSTREAM = <T extends TKStreamSubscribable<any>>(stream: T): Result<TKStre
         return new Response(es.readable, {
             status: 200,
             headers: {
-              "Content-Type": "text/event-stream",
-              Connection: "keep-alive",
-              "Cache-Control": "no-cache",
+                "Content-Type": "text/event-stream",
+                Connection: "keep-alive",
+                "Cache-Control": "no-cache",
             },
-          })
+        })
     },
     async concrete() { return { ok: true, stream } }
 })
@@ -228,7 +228,7 @@ function createClient<T extends Record<string, any>>(): <P extends keyof T>(path
 
 const client = createClient<ToClient<typeof routes>>()
 client("/api/test2").put({})
-client("/api/test").get({body: {test: "hello"}})
+client("/api/test").get({ body: { test: "hello" } })
 client("/api/test").get({ body: { test: "hi" } }).concrete().then(r => r.ok === true ? r.data : r.error)
 
 export { }
