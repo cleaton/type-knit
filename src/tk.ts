@@ -43,87 +43,70 @@ const DefaultMethods = buildMethods({
 });
 type DefaultMethods = typeof DefaultMethods;
 
-function buildContextMethods<M extends Methods>(m: M) {
-  return Object.fromEntries(
-    Object.entries(m).map(([name, method], _) => [
-      name,
-      {
-        ok<T>(value: T): Result<T> {
-          return {
-            async response() {
-              return method.responseEncoder(value);
-            },
-            async concrete() {
-              return { ok: true, value };
-            },
-          };
+function buildContextMethods<M extends Method<any,any,any,any>>(method: M): CTXMethods {
+  return {
+    ok<T>(value: T): Result<T> {
+      return {
+        async response() {
+          return method.responseEncoder(value);
         },
-        err(error: string, status?: number) {
-          status = status ? (status >= 400 ? status : 400) : 400;
-          return {
-            async response() {
-              return new Response(error, { status });
-            },
-            async concrete() {
-              return { ok: false, error };
-            },
-          };
+        async concrete() {
+          return { ok: true, value };
         },
-      },
-    ])
-  ) as Record<keyof M, CTXMethods>;
+      };
+    },
+    err(error: string, status?: number) {
+      status = status ? (status >= 400 ? status : 400) : 400;
+      return {
+        async response() {
+          return new Response(error, { status });
+        },
+        async concrete() {
+          return { ok: false, error };
+        },
+      };
+    },
+  };
 }
 
 
 type HandleHelper<IN> = CTXMethods & {
   in: IN
 }
-type AddRouteF<CTX, M extends Method<any, any, any, any>> = <P extends string, IN extends GetInReq<M>, OUT extends GetOutReq<M>>(
-  path: P,
+type AddEndpointF<CTX, M extends Method<any, any, any, any>> = <IN extends GetInReq<M>, OUT extends GetOutReq<M>>(
   validate: (decoded: GetDecodeType<M>) => IN,
   handle: (tk: HandleHelper<IN>, ctx: CTX) => Result<OUT> | Promise<Result<OUT>>
-) => { [path in P]: { [method in GetMethodName<M>]: TKMethod<IN, OUT, CTX> } };
+) => TKEndpoint<CTX, M, IN, OUT>;
 type RouteMethods<CTX, MethodsImplementations extends Methods> = {
-  [m in keyof MethodsImplementations]: AddRouteF<CTX, MethodsImplementations[m]>;
+  [m in keyof MethodsImplementations]: AddEndpointF<CTX, MethodsImplementations[m]>;
 };
 
-function createAddRouteF<CTX, M extends Method<any, any, any, any>>(method: M): AddRouteF<CTX, M> {
-  return <P extends string, IN extends GetInReq<M>, OUT extends GetOutReq<M>>(
-    path: P,
-    validate: (decoded: GetDecodeType<M>) => IN,
-    handle: (tk: HandleHelper<IN>, ctx: CTX) => Result<OUT> | Promise<Result<OUT>>
-  ) => {
-    return {
-      [path]: {
-        [method.name]: async (req: Request, ctx: CTX) => {
-          const DECODED = await method.requestDecoder(req);
-          const helper = {
-            ...this.contextMethoods[method],
-            in: validate(DECODED)
-          }
-          const OUT = await handle(helper, ctx);
-          return method.responseEncoder(OUT);
-        },
-      },
-    } as {
-      [path in P]: { [method in GetMethodName<M>]: TKMethod<IN, OUT, CTX> };
-    };
-  };
-}
-function tkBuilder<CTX = {}, CustomMethods extends Methods = {}>(custom?: CustomMethods) {
-  const methods = {
-    ...DefaultMethods,
-    ...custom,
-  };
-  const contextMethoods = buildContextMethods(methods);
-  return Object.fromEntries(Object.entries(methods).map(([name, method], _) => [name, createAddRouteF(method)])) as RouteMethods<CTX, typeof methods>;
+
+type TKEndpoint<CTX, M extends Method<any, any, any, any>, IN extends GetInReq<M>, OUT extends GetOutReq<M>> = {
+  method: M,
+  contextMethods: CTXMethods,
+  validate: (decoded: GetDecodeType<M>) => IN
+  handle: (tk: HandleHelper<IN>, ctx: CTX) => Result<OUT> | Promise<Result<OUT>>
 }
 
-const tkb = tkBuilder();
+function addEndpointF<CTX, M extends Method<any, any, any, any>>(method: M) {
+  const contextMethods = buildContextMethods(method)
+  return <IN extends GetInReq<M>, OUT extends GetOutReq<M>>(
+    validate: (decoded: GetDecodeType<M>) => IN,
+    handle: (tk: HandleHelper<IN>, ctx: CTX) => Result<OUT> | Promise<Result<OUT>>
+  ): TKEndpoint<CTX, M, IN, OUT> => (
+    {
+      method,
+      contextMethods,
+      validate,
+      handle
+    }
+  )
+}
 
 /// CLIENT CONFIGURATION
 function createRequestBuilder<M extends Method<any, any, any, any>>(method: M) {
-  (args: unknown) => {
+  return (args: unknown) => {
     const resp = method.requestEncoder(args).then(req => fetch(req))
     return {
       async response() { return resp },
@@ -134,13 +117,13 @@ function createRequestBuilder<M extends Method<any, any, any, any>>(method: M) {
 interface TKClientImpl {
   execute(path: string, method: Method<any,any,any, any>, args: unknown)
 }
-function tkClient<T, CustomMethods extends Methods = {}>(url: string, custom?: CustomMethods) {
+function tkClient<E extends Endpoints<any>, CustomMethods extends Methods = {}>(url: string, custom?: CustomMethods) {
   const methods = {
     ...DefaultMethods,
     ...custom,
   };
   const reqConstructors = Object.fromEntries(Object.entries(methods).map(([name, method], _) => [name, createRequestBuilder(method)]))
-  return <P extends keyof T>(path: P) => reqConstructors as T[P]
+  return <P extends keyof E>(path: P) => reqConstructors as ToClient<E>[P]
 }
 /// CLIENT CONFIGURATIOn
 
@@ -193,51 +176,94 @@ type GetMethodName<T> = T extends Method<infer Name, any, any, any> ? Name : nev
 type TKMethod<IN, OUT, CTX> = (req: Request, ctx: CTX) => Promise<Response>;
 type JSONBody<H extends Record<string, string>, T extends Record<string, string>, J> = { headers?: H; query?: T; json?: J };
 
-const test = tkb.POST(
-  "/test/something",
-  (test) => ({ json: { hi: 1234 } }),
-  async (tk, ctx) => tk.ok({ out: tk.in.json.hi })
-);
-const test2 = tkb.POST(
-  "/test/something2",
-  (test) => ({ json: { hi: 1234 } }),
-  async (tk, ctx) => tk.ok({ out: tk.in.json.hi })
-);
-const test3 = tkb.POST(
-  "/test/something3",
-  (test) => ({ json: { hi: 1234 } }),
-  async (tk, ctx) => tk.ok({ out: "1234" })
-);
 
-type Router<CTX> = {
-  [k in string]: { [m in string]: TKMethod<any, any, CTX> };
+function EnpointsBuilder<CTX, CustomMethods extends Methods = {}>(custom?: CustomMethods) {
+  const methods = {
+    ...DefaultMethods,
+    ...custom,
+  };
+  const builders = Object.fromEntries(Object.entries(methods).map(([name, method], _) => [name, addEndpointF(method)]))  as RouteMethods<CTX, typeof methods>
+  return {
+    ...builders,
+    endpoints<T extends {
+      [path in string]: {
+        [method in keyof typeof methods]: TKEndpoint<CTX, typeof methods[method], any, any>
+      }
+    }>(endpoints: T): T {
+      return endpoints
+    }
+  }
+}
+
+type PathFormat = `/${string}`
+type Endpoints<CTX> = {
+  [k in PathFormat]: Record<string, TKEndpoint<CTX, Method<any,any, any, any>, any, any>>
+}
+
+type TT = Record<string, Record<string, number>>
+
+const ttt: TT = {}
+const r = ttt["hi"]["hi"]
+
+
+
+const eb = EnpointsBuilder()
+const endpoints = {
+  "/test/something": {
+    POST: eb.POST((decoded => ({json: {test: 1234}})), (tk) => tk.ok(tk.in.json))
+  },
+  "/test/something2": {
+    POST: eb.POST((decoded => ({json: {test: 1234}})), (tk) => tk.ok(tk.in.json))
+  }
+}
+
+
+type ToClientHandler<T> = T extends TKEndpoint<any, any, infer IN, infer OUT> ? (args: IN) => Result<OUT> : never;
+type ToClient<E extends Endpoints<any>> = {
+  [P in keyof E]: { [M in keyof E[P]]: ToClientHandler<E[P][M]> };
 };
+type ToTestClient<Routes> = <P extends keyof Routes>(url: P) => Routes[P]
 
-type ToClientHandler<T> = T extends TKMethod<infer IN, infer OUT, any> ? (args: IN) => Result<OUT> : never;
-type ToClient<R extends Router<any>> = {
-  [K in keyof R]: { [M in keyof R[K]]: ToClientHandler<R[K][M]> };
-};
+const cli = tkClient<typeof endpoints>("/test")
 
-const re = merge(test, test2, test3);
+//cli("/test/something").POST()
+//function toClient<E extends Endpoints<any>, R extends keyof E>(endpoints: T, path: R) {
+//  return routes[path]
+//}
+//const re = merge(test, test2, test3);
 
-type Client = ToClient<typeof test>;
+//type Client = ToClient<typeof routes>;
+//
+//
+//const aokokas = undefined as ToTestClient<typeof routes>
+//aokokas("test/somthing4").POST
+//const tttt = undefined as Client
+//tttt["/test/something4"].POST()
 
-const tttt = undefined as Client
-test3["/test/something3"].POST()
 
-
-const testcli = tkClient<Client>("http://127.0.0.1");
-const r = testcli("/test/something").POST({json: {hi: 123}}).concrete()
-
-async function route<CTX>(ctx: CTX, req: Request, r: Router<CTX>) {
+//const testcli = tkClient<Client>("http://127.0.0.1");
+//const r = testcli("/test/something").POST({json: {hi: 123}}).concrete()
+//
+async function route<CTX, E extends Endpoints<CTX>>(ctx: CTX, req: Request, e: E) {
   const url = new URL(req.url);
   const methodName = req.headers.get("tk-m");
-  const methods = r[url.pathname];
+  const methods = e[url.pathname as PathFormat];
   const m = methods ? methods[methodName] : undefined;
-  return m ? m(req, ctx) : new Response("not found", { status: 404 });
+  if (m) {
+    const method = m.method
+    const contextMethods = m.contextMethods
+    const decoded = method.requestDecoder(req)
+    const helper: HandleHelper<any> = {
+      in: () => m.validate(decoded),
+      ...contextMethods
+    }
+    const out = await m.handle(helper, ctx)
+    return out.response()
+  }
+  return new Response("not found", { status: 404 })
 }
 const t = "" as unknown;
-route(t, new Request(""), re);
+route(t, new Request(""), endpoints);
 
 /// MERGE UTIL
 // Names of properties in T with types that include undefined
