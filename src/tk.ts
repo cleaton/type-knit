@@ -125,6 +125,9 @@ function tkClient<E extends Endpoints<any>, CustomMethods extends Methods = {}>(
   const reqConstructors = Object.fromEntries(Object.entries(methods).map(([name, method], _) => [name, createRequestBuilder(method)]))
   return <P extends keyof E>(path: P) => reqConstructors as ToClient<E>[P]
 }
+function localClient<E extends Endpoints<any>>(endpoints: E) {
+  return <P extends keyof E>(path: P) => endpoints[path] as ToClient<E>[P]
+}
 /// CLIENT CONFIGURATIOn
 
 //const clientBase = new TKClientBase<ServerType>();
