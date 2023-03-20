@@ -9,14 +9,15 @@ type Encoder<ToEncode, EncodeTo, ToDecode, DecodeTo> = {
 };
 type ClientEncoder<In, Out> = Encoder<In, RequestInit, Response, Out>;
 type ServerEncoder<In, Out> = Encoder<Out, Response, Request, In>;
+type ForceUpper<T extends string> = T extends Uppercase<T> ? T : never;
 export interface MethodType<Name extends string, In, Out> {
-	name: Name;
+	name: ForceUpper<Name>;
 	client: ClientEncoder<In, Out>;
 	server: ServerEncoder<In, Out>;
 }
 
 export function createMethodType<Name extends string, In, Out>(
-	name: Name,
+	name: ForceUpper<Name>,
 	client: ClientEncoder<In, Out>,
 	server: ServerEncoder<In, Out>
 ) {

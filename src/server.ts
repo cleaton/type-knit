@@ -190,12 +190,14 @@ class EndpointBuilder<
       c: ContextMethods<Env, In, MW, MethodOut>
     ) => MaybeAsync<MethodResult<T>>
   ) {
-    return new Endpoint<MethodName, MethodIn, MethodOut, In, T, Env, MW>(
+    const name = this._method.name;
+    const endpoint = new Endpoint<MethodName, MethodIn, MethodOut, In, T, Env, MW>(
       this._method,
       handler,
       this._middlewares,
       this._validator
     );
+    return { [name]: endpoint } as { [n in MethodName]: Endpoint<MethodName, MethodIn, MethodOut, In, T, Env, MW> };
   }
 }
 
@@ -209,7 +211,7 @@ type MethodConstructors<
     : never;
 };
 type AllowedEndpoints<Env, T> = {
-	  [m in keyof T]: m extends string ? Endpoint<m, any, any, any, any, Env, any> : never
+	  [m in keyof T]?: m extends string ? Endpoint<m, any, any, any, any, Env, any> : never
 }
 type Router<Env, AvaliableMethods> = {
 	[path in string]: AllowedEndpoints<Env, AvaliableMethods> | Router<Env, AvaliableMethods>
@@ -270,7 +272,7 @@ const builder = BaseBuilder.new<{ test: number }>().middleware((c) =>
   ok({ middleware: "HI THERE" })
 );
 const endpoint = builder
-  .post()
+  .POST()
   .inraw<{ testargs: number }>()
   .middleware((c) => ok({ abc: 1234 }))
   .handle((c) => c.ok(c.args().rawCast));
@@ -292,11 +294,16 @@ const createSubscription = (topic: string) => {
   };
 };
 
-function createRouter<R extends Router<any>>(router: R) {
-	return router
-}
 
-type RouterClient<T extends Router<any>> = <P extends keyof T>(path: P) => T[P] extends Endpoint<infer method, any, any, infer In, infer Out, any, any> ? { [k in method]: (args: RemoveUnvalidated<In>) => Out} : T[P] extends Router<any> ? RouterClient<T[P]> : never
+type RouterClient<T> = {
+  [k in keyof T]: k extends string ? 
+                    k extends Uppercase<k> ?
+                      T[k] extends Endpoint<any, any, any, infer In, infer Out, any, any> ?
+                        (args: RemoveUnvalidated<In>) => Promise<Out>
+                        : never
+                      : RouterClient<T[k]>
+                    : never
+  }
 
 const publish = (topic: string, data: any) => {
   const existing = subscribers.get(topic);
@@ -306,28 +313,28 @@ const publish = (topic: string, data: any) => {
 
 
 const streamendpoint = builder
-  .stream()
+  .STREAM()
   .inraw<{ testargs: number }>()
   .middleware((c) => ok({ abc: 1234 }))
   .handle((c) => c.ok(createSubscription("test")));
 
-const r = createRouter({
+const r = builder.router({
 	test: endpoint,
 	test2: {
 		test3: streamendpoint
 	},
 	test3: {
-		...builder.post().inraw<{ testargs: number }>().handle((c) => c.ok({ abc: 1234 })
+    ...endpoint,
+		...builder.POST().inraw<{ testargs: number }>().handle((c) => c.ok({ abc: 1234 }))
 	}
-  })
+})
 
 const client: RouterClient<typeof r> = undefined as any;
 
-const out = client("test2")("test3").stream({ testargs: 1234 })
-const out = client("test").post({ testargs: 1234 })
+const out = client.test2.test3.STREAM({ testargs: 1234 })
 
-const streamresp = streamendpoint.local({ testargs: 1234 }, { test: 1 });
-const response = endpoint.local({ testargs: 1234 }, { test: 1 });
+const streamresp = streamendpoint.STREAM.local({ testargs: 1234 }, { test: 1 });
+const response = endpoint.POST.local({ testargs: 1234 }, { test: 1 });
 streamresp.then((r) => {
   if (r.ok) {
     console.log("HERE");

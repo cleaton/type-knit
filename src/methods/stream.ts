@@ -7,7 +7,7 @@ export interface strm<T> {
 }
 
 const stream = createMethodType(
-	'stream',
+	'STREAM',
 	{
 		encode: async (result: Result<any>) => new Request(JSON.stringify(result), { method: 'POST' }),
 		decode: async (response: Response) => await response.json() as Result<any>,
